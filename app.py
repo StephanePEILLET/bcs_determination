@@ -8,7 +8,7 @@ from PIL import Image
 from inference import predict
 
 app = FastAPI(
-    title="Stanford Dogs Inference API",
+    title="Stanford Bcs Inference API",
     description="REST API to predict dog breeds from images using trained PyTorch Lightning models."
 )
 
@@ -18,7 +18,7 @@ DEFAULT_DATA_DIR = "" # Optional mapping dataset directory
 
 @app.get("/")
 def read_root():
-    return {"status": "healthy", "message": "Welcome to the Stanford Dogs Inference API! Send a POST request to /predict/"}
+    return {"status": "healthy", "message": "Welcome to the Stanford Bcs Inference API! Send a POST request to /predict/"}
 
 @app.post("/predict/")
 async def predict_dog(

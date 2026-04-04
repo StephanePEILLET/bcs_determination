@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stanford Dogs Inference Script
+Stanford Bcs Inference Script
 """
 
 import os
@@ -15,8 +15,8 @@ import torch.nn.functional as F
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from dogs_pipeline.lightning_module.stanford_dogs_module import LitStanfordDogs
-from dogs_pipeline.data.stanford_dogs_datamodule import StanfordDogsDataModule
+from bcs_pipeline.lightning_module.stanford_bcs_module import LitStanfordBcs
+from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Predict dog breed from an image.")
@@ -44,7 +44,7 @@ def predict(image_path: str, checkpoint_path: str, model_name: str, num_classes:
     
     print(f"Loading model from {checkpoint_path}...")
     try:
-        model = LitStanfordDogs.load_from_checkpoint(
+        model = LitStanfordBcs.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
             model_name=model_name,
             num_classes=num_classes,
@@ -58,7 +58,7 @@ def predict(image_path: str, checkpoint_path: str, model_name: str, num_classes:
 
     # Load datamodule to get the expected validation transforms
     # We initialize it with dummy paths if a proper data_dir isn't provided just to fetch transforms
-    datamodule = StanfordDogsDataModule(data_dir=data_dir if data_dir else "/tmp/dummy", image_size=224)
+    datamodule = StanfordBcsDataModule(data_dir=data_dir if data_dir else "/tmp/dummy", image_size=224)
     transform = datamodule.val_transforms
 
     # Extract class names if a valid data_dir is provided

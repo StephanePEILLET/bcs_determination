@@ -1,14 +1,14 @@
-# Stanford Dogs Classification
+# Stanford Bcs Classification
 
-This repository contains a PyTorch Lightning based pipeline for classifying the 120 dog breeds from the [Stanford Dogs Dataset](http://vision.stanford.edu/aditya86/ImageNetDogs/).
+This repository contains a PyTorch Lightning based pipeline for classifying the 120 dog breeds from the [Stanford Bcs Dataset](http://vision.stanford.edu/aditya86/ImageNetBcs/).
 
 ## Project Structure
 
 ```
-dogs_analysis/
+bcs_analysis/
 ├── configs/              # Hydra configuration files
 ├── src/
-│   └── dogs_pipeline/    # Python package for models, datamodules, logging, etc.
+│   └── bcs_pipeline/    # Python package for models, datamodules, logging, etc.
 ├── experiments/          # Directory where Hydra saves experiment logs/checkpoints
 ├── environment.yaml      # Conda environment file
 ├── train.py              # Main training script
@@ -22,12 +22,12 @@ dogs_analysis/
 1. Create the Conda environment using the provided YAML file:
    ```bash
    conda env create -f environment.yaml
-   conda activate stanford_dogs
+   conda activate stanford_bcs
    ```
    *(Ensure you have NVIDIA drivers and CUDA configured correctly if training on a GPU).*
 
 2. Data Preparation:
-   Download the Stanford Dogs Dataset and extract it to your system. Note the path containing the `Images/` folder, for example, `/path/to/stanford_dogs/images`.
+   Download the Stanford Bcs Dataset and extract it to your system. Note the path containing the `Images/` folder, for example, `/path/to/stanford_bcs/images`.
 
 ## Training
 
@@ -38,11 +38,11 @@ Parameters and configurations are managed via [Hydra](https://hydra.cc/). You ca
 python train.py
 
 # Override hyperparameters specific to your environment explicitly
-python train.py data_dir=/path/to/stanford_dogs/images batch_size=32 max_epochs=50
+python train.py data_dir=/path/to/stanford_bcs/images batch_size=32 max_epochs=50
 ```
 
 By default:
-- Experiment artifacts (logs, checkpoints, tensorboard metrics) will be exported to `experiments/stanford_dogs/<date>_<time>`.
+- Experiment artifacts (logs, checkpoints, tensorboard metrics) will be exported to `experiments/stanford_bcs/<date>_<time>`.
 - Models are tracked by their validation accuracy.
 
 ## Inference
@@ -52,8 +52,8 @@ Once you have trained the model and obtained a PyTorch Lightning checkpoint (`.c
 ```bash
 python inference.py \
   --image_path sample_dog.jpg \
-  --checkpoint_path experiments/stanford_dogs/.../checkpoints/epoch=...ckpt \
-  --data_dir /path/to/stanford_dogs/images
+  --checkpoint_path experiments/stanford_bcs/.../checkpoints/epoch=...ckpt \
+  --data_dir /path/to/stanford_bcs/images
 ```
 
 *(Providing `--data_dir` is completely optional, but recommended as it gives the script access to map numerical class IDs back directly to readable dog breed names).*
@@ -76,12 +76,12 @@ This project isolates configurations, data loading, and model architectures. Bel
 The Hydra-decorated central training loop.
 - **`train(cfg: DictConfig) -> float`**: Sets up early stopping, TensorBoard logging, and triggers `trainer.fit()`. For hyperparameter tuning, it resolves and returns `checkpoint_callback.best_model_score` (`val_acc`), feeding the metric back to the Optuna sweeps.
 
-### 2. PyTorch Lightning Backend (`src/dogs_pipeline/`)
-- **`LitStanfordDogs` (`lightning_module/stanford_dogs_module.py`)**: 
+### 2. PyTorch Lightning Backend (`src/bcs_pipeline/`)
+- **`LitStanfordBcs` (`lightning_module/stanford_bcs_module.py`)**: 
   - Subclasses `LightningModule`. Abstract class interacting with either standard ResNets or advanced ViTs (`model_name="vit"`).
   - *`validation_step`*: Orchestrates custom TensorBoard tracking by rendering a `make_grid` output of the batches for deep visual inspection.
   - *`configure_optimizers`*: Retrieves dictionary configurations from Hydra to load advanced schedulers (like `CosineAnnealingLR`).
-- **`StanfordDogsDataModule`**:
+- **`StanfordBcsDataModule`**:
   - *`setup`*: Performs programmatic cross-validation memory splitting. Ensures robust State-of-the-Art data augmentation by pipelining images through `RandAugment`.
 
 ### 3. `inference.py`
@@ -101,6 +101,6 @@ Navigate to `http://localhost:8000/docs` to view the interactive swagger documen
 ### Docker (Production)
 A `Dockerfile` is provided which automatically sets up the complete Conda environment securely and launches the API.
 ```bash
-docker build -t stanford_dogs_api .
-docker run -p 8000:8000 stanford_dogs_api
+docker build -t stanford_bcs_api .
+docker run -p 8000:8000 stanford_bcs_api
 ```

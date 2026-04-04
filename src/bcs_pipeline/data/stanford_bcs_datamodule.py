@@ -6,15 +6,15 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
-class StanfordDogsDataModule(LightningDataModule):
+class StanfordBcsDataModule(LightningDataModule):
     """
-    LightningDataModule for Stanford Dogs Dataset.
+    LightningDataModule for Stanford Bcs Dataset.
     Expects data in `data_dir/Images/` with 120 class subdirectories.
     """
 
     def __init__(
         self,
-        data_dir: str = "/home/SPeillet/Downloads/stanford_dogs/images",
+        data_dir: str = "/home/SPeillet/Downloads/stanford_bcs/images",
         batch_size: int = 64,
         num_workers: int = 4,
         image_size: int = 224,

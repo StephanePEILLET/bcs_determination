@@ -27,7 +27,7 @@ def setup_logging(
         Configured logger
     """
     # Create logger
-    logger = logging.getLogger("dogs_pipeline")
+    logger = logging.getLogger("bcs_pipeline")
     logger.setLevel(level)
     
     # Clear existing handlers
@@ -67,7 +67,7 @@ def setup_logging(
     return logger
 
 
-def get_logger(name: str = "dogs_pipeline") -> logging.Logger:
+def get_logger(name: str = "bcs_pipeline") -> logging.Logger:
     """
     Get a logger instance.
     

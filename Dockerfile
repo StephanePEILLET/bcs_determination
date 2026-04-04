@@ -14,7 +14,7 @@ COPY environment.yaml .
 RUN conda env create -f environment.yaml
 
 # Set shell to ensure `run` commands happen inside the environment
-SHELL ["conda", "run", "-n", "dogs_analysis", "/bin/bash", "-c"]
+SHELL ["conda", "run", "-n", "bcs_analysis", "/bin/bash", "-c"]
 
 # Copy all the project source code
 COPY . /app/
@@ -23,7 +23,7 @@ COPY . /app/
 EXPOSE 8000
 
 # The Entrypoint directs Docker to launch all CMD instructions via the active Conda environment
-ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "dogs_analysis"]
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "bcs_analysis"]
 
 # Launch the FastAPI web server wrapper using uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

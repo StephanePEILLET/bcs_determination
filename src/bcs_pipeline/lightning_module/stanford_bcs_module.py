@@ -5,12 +5,12 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 
-from dogs_pipeline.models.resnet_transfer import ResNetTransfer
-from dogs_pipeline.models.vit_transfer import ViTTransfer
+from bcs_pipeline.models.resnet_transfer import ResNetTransfer
+from bcs_pipeline.models.vit_transfer import ViTTransfer
 
-class LitStanfordDogs(LightningModule):
+class LitStanfordBcs(LightningModule):
     """
-    LightningModule for Stanford Dogs Classification.
+    LightningModule for Stanford Bcs Classification.
     """
     def __init__(
         self,

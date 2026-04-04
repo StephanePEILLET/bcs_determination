@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stanford Dogs Training Pipeline
+Stanford Bcs Training Pipeline
 """
 
 import os
@@ -20,10 +20,10 @@ from rich.tree import Tree
 from rich.syntax import Syntax
 from pytorch_lightning.profilers import PyTorchProfiler
 
-from dogs_pipeline.data.stanford_dogs_datamodule import StanfordDogsDataModule
-from dogs_pipeline.lightning_module.stanford_dogs_module import LitStanfordDogs
-from dogs_pipeline.utils.config_utils import setup_experiment_dirs, validate_config
-from dogs_pipeline.utils.logging_utils import setup_logging, log_experiment_info
+from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
+from bcs_pipeline.lightning_module.stanford_bcs_module import LitStanfordBcs
+from bcs_pipeline.utils.config_utils import setup_experiment_dirs, validate_config
+from bcs_pipeline.utils.logging_utils import setup_logging, log_experiment_info
 
 
 @hydra.main(config_path="configs", config_name="config", version_base=None)
@@ -52,7 +52,7 @@ def train(cfg: DictConfig) -> float:
     
     # Instantiate data module
     logger.info("Setting up data module...")
-    data_module = StanfordDogsDataModule(
+    data_module = StanfordBcsDataModule(
         data_dir=cfg.data_dir,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
@@ -61,7 +61,7 @@ def train(cfg: DictConfig) -> float:
     
     # Instantiate model
     logger.info("Setting up model...")
-    model = LitStanfordDogs(
+    model = LitStanfordBcs(
         model_name=cfg.model_name,
         num_classes=cfg.num_classes,
         lr=cfg.lr,
@@ -100,7 +100,7 @@ def train(cfg: DictConfig) -> float:
     if cfg.use_tensorboard:
         tensorboard_logger = pl.loggers.TensorBoardLogger(
             save_dir=experiment_dirs["tensorboard"],
-            name="stanford_dogs",
+            name="stanford_bcs",
             version=None
         )
         loggers.append(tensorboard_logger)
@@ -109,7 +109,7 @@ def train(cfg: DictConfig) -> float:
         try:
             wandb_logger = pl.loggers.WandbLogger(
                 project=cfg.wandb_project,
-                name=f"{cfg.model_name}_dogs",
+                name=f"{cfg.model_name}_bcs",
                 save_dir=experiment_dirs["wandb"],
                 log_model=True
             )

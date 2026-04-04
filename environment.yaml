@@ -1,4 +1,4 @@
-name: dogs_analysis
+name: bcs_analysis
 channels:
   - pytorch
   - nvidia
