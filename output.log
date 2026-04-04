@@ -1,0 +1,476 @@
+[22:45:1… INFO     ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+[2026-04-03 22:45:19,152][dogs_pipeline][INFO] - ==================================================
+          INFO     EX
+                   PE
+                   RI
+                   ME
+                   NT
+                     
+                   SE
+                   TU
+                   P 
+[2026-04-03 22:45:19,155][dogs_pipeline][INFO] - EXPERIMENT SETUP
+          INFO     ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+[2026-04-03 22:45:19,156][dogs_pipeline][INFO] - ==================================================
+          INFO     Mo
+                   de
+                   l:
+                     
+                   re
+                   sn
+                   et
+                   50
+[2026-04-03 22:45:19,157][dogs_pipeline][INFO] - Model: resnet50
+          INFO     Op
+                   ti
+                   mi
+                   ze
+                   r:
+                     
+                   ad
+                   am
+[2026-04-03 22:45:19,157][dogs_pipeline][INFO] - Optimizer: adam
+          INFO     Sc
+                   he
+                   du
+                   le
+                   r:
+                     
+                   co
+                   si
+                   ne
+                   _a
+                   nn
+                   ea
+                   li
+                   ng
+[2026-04-03 22:45:19,158][dogs_pipeline][INFO] - Scheduler: cosine_annealing
+          INFO     Le
+                   ar
+                   ni
+                   ng
+                     
+                   Ra
+                   te
+                   : 
+                   0.
+                   00
+                   1 
+[2026-04-03 22:45:19,159][dogs_pipeline][INFO] - Learning Rate: 0.001
+          INFO     Ba
+                   tc
+                   h 
+                   Si
+                   ze
+                   : 
+                   32
+[2026-04-03 22:45:19,159][dogs_pipeline][INFO] - Batch Size: 32
+          INFO     Ma
+                   x 
+                   Ep
+                   oc
+                   hs
+                   : 
+                   1 
+[2026-04-03 22:45:19,160][dogs_pipeline][INFO] - Max Epochs: 1
+          INFO     ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+[2026-04-03 22:45:19,161][dogs_pipeline][INFO] - ==================================================
+          INFO     DI
+                   RE
+                   CT
+                   OR
+                   IE
+                   S:
+[2026-04-03 22:45:19,161][dogs_pipeline][INFO] - DIRECTORIES:
+          INFO       
+                   ch
+                   ec
+                   kp
+                   oi
+                   nt
+                   s:
+                     
+                   ex
+                   pe
+                   ri
+                   me
+                   nt
+                   s/
+                   re
+                   sn
+                   et
+                   50
+                   _a
+                   da
+                   m_
+                   co
+                   si
+                   ne
+                   _a
+                   nn
+                   ea
+                   li
+                   ng
+                   /c
+                   he
+                   ck
+                   po
+                   in
+                   ts
+[2026-04-03 22:45:19,162][dogs_pipeline][INFO] -   checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+          INFO       
+                   lo
+                   gs
+                   : 
+                   ex
+                   pe
+                   ri
+                   me
+                   nt
+                   s/
+                   re
+                   sn
+                   et
+                   50
+                   _a
+                   da
+                   m_
+                   co
+                   si
+                   ne
+                   _a
+                   nn
+                   ea
+                   li
+                   ng
+                   /l
+                   og
+                   s 
+[2026-04-03 22:45:19,163][dogs_pipeline][INFO] -   logs: experiments/resnet50_adam_cosine_annealing/logs
+          INFO       
+                   te
+                   ns
+                   or
+                   bo
+                   ar
+                   d:
+                     
+                   ex
+                   pe
+                   ri
+                   me
+                   nt
+                   s/
+                   re
+                   sn
+                   et
+                   50
+                   _a
+                   da
+                   m_
+                   co
+                   si
+                   ne
+                   _a
+                   nn
+                   ea
+                   li
+                   ng
+                   /t
+                   en
+                   so
+                   rb
+                   oa
+                   rd
+[2026-04-03 22:45:19,164][dogs_pipeline][INFO] -   tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+          INFO       
+                   wa
+                   nd
+                   b:
+                     
+                   ex
+                   pe
+                   ri
+                   me
+                   nt
+                   s/
+                   re
+                   sn
+                   et
+                   50
+                   _a
+                   da
+                   m_
+                   co
+                   si
+                   ne
+                   _a
+                   nn
+                   ea
+                   li
+                   ng
+                   /w
+                   an
+                   db
+[2026-04-03 22:45:19,164][dogs_pipeline][INFO] -   wandb: experiments/resnet50_adam_cosine_annealing/wandb
+          INFO       
+                   hy
+                   dr
+                   a:
+                     
+                   ex
+                   pe
+                   ri
+                   me
+                   nt
+                   s/
+                   re
+                   sn
+                   et
+                   50
+                   _a
+                   da
+                   m_
+                   co
+                   si
+                   ne
+                   _a
+                   nn
+                   ea
+                   li
+                   ng
+                   /h
+                   yd
+                   ra
+[2026-04-03 22:45:19,165][dogs_pipeline][INFO] -   hydra: experiments/resnet50_adam_cosine_annealing/hydra
+          INFO     ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+                   ==
+[2026-04-03 22:45:19,166][dogs_pipeline][INFO] - ==================================================
+TRAINING CONFIG
+┗━━ seed: 42         
+    model_name: resne
+    num_classes: 120 
+    lr: 0.001        
+    optimizer_name: a
+    scheduler_config:
+      name: cosine_an
+      T_max: 20      
+      monitor: val_lo
+    data_dir: /home/S
+    image_size: 224  
+    batch_size: 32   
+    num_workers: 8   
+    max_epochs: 1    
+    patience: 5      
+    log_every_n_steps
+    val_check_interva
+    precision: 16-mix
+    use_tensorboard: 
+    use_wandb: false 
+    wandb_project: st
+    trainer:         
+      accelerator: cp
+      devices: 1     
+      profiler: null 
+      resume_from_che
+    inference:       
+      checkpoint_path
+      batch_size: 64 
+      save_results: t
+    n_trials: 10     
+    n_epochs_per_tria
+    timeout: null    
+                     
+Seed set to 42
+          INFO     Se
+                   tt
+                   in
+                   g 
+                   up
+                   da
+                   ta
+                     
+                   mo
+                   du
+                   le
+                   ..
+                   . 
+[2026-04-03 22:45:19,174][dogs_pipeline][INFO] - Setting up data module...
+          INFO     Se
+                   tt
+                   in
+                   g 
+                   up
+                   mo
+                   de
+                   l.
+                   ..
+[2026-04-03 22:45:19,175][dogs_pipeline][INFO] - Setting up model...
+          INFO     Se
+                   tt
+                   in
+                   g 
+                   up
+                   tr
+                   ai
+                   ne
+                   r.
+                   ..
+[2026-04-03 22:45:19,450][dogs_pipeline][INFO] - Setting up trainer...
+/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/accelerator_connector.py:513: You passed `Trainer(accelerator='cpu', precision='16-mixed')` but AMP with fp16 is not supported on CPU. Using `precision='bf16-mixed'` instead.
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: False
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/setup.py:177: GPU available but not used. You can set it by doing `Trainer(accelerator='gpu')`.
+`Trainer(val_check_interval=1.0)` was configured so validation will run at the end of the training epoch..
+          INFO     St
+                   ar
+                   ti
+                   ng
+                     
+                   tr
+                   ai
+                   ni
+                   ng
+                   ..
+                   . 
+[2026-04-03 22:45:19,472][dogs_pipeline][INFO] - Starting training...
+Error executing job with overrides: ['trainer.accelerator=cpu', 'trainer.devices=1', 'max_epochs=1']
+Traceback (most recent call last):
+  File "/home/SPeillet/dogs_analysis/train.py", line 139, in train
+    trainer.fit(model, datamodule=data_module)
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 974, in _run
+    call._call_setup_hook(self)  # allow user to set up LightningModule in accelerator environment
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 101, in _call_setup_hook
+    if hasattr(logger, "experiment"):
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/lightning_fabric/loggers/logger.py", line 118, in experiment
+    return fn(self)
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/lightning_fabric/loggers/tensorboard.py", line 191, in experiment
+    from torch.utils.tensorboard import SummaryWriter
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/torch/utils/tensorboard/__init__.py", line 12, in <module>
+    from .writer import FileWriter, SummaryWriter
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 13, in <module>
+    from tensorboard.compat.proto import event_pb2
+  File "/home/SPeillet/.local/lib/python3.10/site-packages/tensorboard/compat/proto/event_pb2.py", line 17, in <module>
+    from tensorboard.compat.proto import summary_pb2 as tensorboard_dot_compat_dot_proto_dot_summary__pb2
+  File "/home/SPeillet/.local/lib/python3.10/site-packages/tensorboard/compat/proto/summary_pb2.py", line 17, in <module>
+    from tensorboard.compat.proto import tensor_pb2 as tensorboard_dot_compat_dot_proto_dot_tensor__pb2
+  File "/home/SPeillet/.local/lib/python3.10/site-packages/tensorboard/compat/proto/tensor_pb2.py", line 16, in <module>
+    from tensorboard.compat.proto import resource_handle_pb2 as tensorboard_dot_compat_dot_proto_dot_resource__handle__pb2
+  File "/home/SPeillet/.local/lib/python3.10/site-packages/tensorboard/compat/proto/resource_handle_pb2.py", line 16, in <module>
+    from tensorboard.compat.proto import tensor_shape_pb2 as tensorboard_dot_compat_dot_proto_dot_tensor__shape__pb2
+  File "/home/SPeillet/.local/lib/python3.10/site-packages/tensorboard/compat/proto/tensor_shape_pb2.py", line 36, in <module>
+    _descriptor.FieldDescriptor(
+  File "/home/SPeillet/miniforge3/lib/python3.10/site-packages/google/protobuf/descriptor.py", line 553, in __new__
+    _message.Message._CheckCalledFromGeneratedFile()
+TypeError: Descriptors cannot be created directly.
+If this call came from a _pb2.py file, your generated code is out of date and must be regenerated with protoc >= 3.19.0.
+If you cannot immediately regenerate your protos, some other possible workarounds are:
+ 1. Downgrade the protobuf package to 3.20.x or lower.
+ 2. Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Python parsing and will be much slower).
+
+More information: https://developers.google.com/protocol-buffers/docs/news/2022-05-06#python-updates
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

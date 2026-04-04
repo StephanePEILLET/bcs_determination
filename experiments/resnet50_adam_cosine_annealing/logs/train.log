@@ -1,0 +1,126 @@
+==================================================
+EXPERIMENT SETUP
+==================================================
+Model: resnet50
+Optimizer: adam
+Scheduler: cosine_annealing
+Learning Rate: 0.001
+Batch Size: 32
+Max Epochs: 1
+==================================================
+DIRECTORIES:
+  checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+  logs: experiments/resnet50_adam_cosine_annealing/logs
+  tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+  wandb: experiments/resnet50_adam_cosine_annealing/wandb
+  hydra: experiments/resnet50_adam_cosine_annealing/hydra
+==================================================
+Setting up data module...
+Setting up model...
+Setting up trainer...
+Starting training...
+==================================================
+EXPERIMENT SETUP
+==================================================
+Model: resnet50
+Optimizer: adam
+Scheduler: cosine_annealing
+Learning Rate: 0.001
+Batch Size: 32
+Max Epochs: 1
+==================================================
+DIRECTORIES:
+  checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+  logs: experiments/resnet50_adam_cosine_annealing/logs
+  tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+  wandb: experiments/resnet50_adam_cosine_annealing/wandb
+  hydra: experiments/resnet50_adam_cosine_annealing/hydra
+==================================================
+Setting up data module...
+Setting up model...
+Setting up trainer...
+Starting training...
+==================================================
+EXPERIMENT SETUP
+==================================================
+Model: resnet50
+Optimizer: adam
+Scheduler: cosine_annealing
+Learning Rate: 0.001
+Batch Size: 32
+Max Epochs: 1
+==================================================
+DIRECTORIES:
+  checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+  logs: experiments/resnet50_adam_cosine_annealing/logs
+  tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+  wandb: experiments/resnet50_adam_cosine_annealing/wandb
+  hydra: experiments/resnet50_adam_cosine_annealing/hydra
+==================================================
+Setting up data module...
+Setting up model...
+Setting up trainer...
+Starting training...
+==================================================
+EXPERIMENT SETUP
+==================================================
+Model: resnet50
+Optimizer: adam
+Scheduler: cosine_annealing
+Learning Rate: 0.001
+Batch Size: 32
+Max Epochs: 1
+==================================================
+DIRECTORIES:
+  checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+  logs: experiments/resnet50_adam_cosine_annealing/logs
+  tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+  wandb: experiments/resnet50_adam_cosine_annealing/wandb
+  hydra: experiments/resnet50_adam_cosine_annealing/hydra
+==================================================
+Setting up data module...
+Setting up model...
+Setting up trainer...
+Starting training...
+==================================================
+EXPERIMENT SETUP
+==================================================
+Model: resnet50
+Optimizer: adam
+Scheduler: cosine_annealing
+Learning Rate: 0.001
+Batch Size: 32
+Max Epochs: 1
+==================================================
+DIRECTORIES:
+  checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+  logs: experiments/resnet50_adam_cosine_annealing/logs
+  tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+  wandb: experiments/resnet50_adam_cosine_annealing/wandb
+  hydra: experiments/resnet50_adam_cosine_annealing/hydra
+==================================================
+Setting up data module...
+Setting up model...
+Setting up trainer...
+Starting training...
+==================================================
+EXPERIMENT SETUP
+==================================================
+Model: resnet50
+Optimizer: adam
+Scheduler: cosine_annealing
+Learning Rate: 0.001
+Batch Size: 32
+Max Epochs: 1
+==================================================
+DIRECTORIES:
+  checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+  logs: experiments/resnet50_adam_cosine_annealing/logs
+  tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+  wandb: experiments/resnet50_adam_cosine_annealing/wandb
+  hydra: experiments/resnet50_adam_cosine_annealing/hydra
+==================================================
+Setting up data module...
+Setting up model...
+Setting up trainer...
+Starting training...

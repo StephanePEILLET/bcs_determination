@@ -1,0 +1,21 @@
+[2026-04-03 22:46:46,795][dogs_pipeline][INFO] - ==================================================
+[2026-04-03 22:46:46,797][dogs_pipeline][INFO] - EXPERIMENT SETUP
+[2026-04-03 22:46:46,798][dogs_pipeline][INFO] - ==================================================
+[2026-04-03 22:46:46,798][dogs_pipeline][INFO] - Model: resnet50
+[2026-04-03 22:46:46,799][dogs_pipeline][INFO] - Optimizer: adam
+[2026-04-03 22:46:46,799][dogs_pipeline][INFO] - Scheduler: cosine_annealing
+[2026-04-03 22:46:46,800][dogs_pipeline][INFO] - Learning Rate: 0.001
+[2026-04-03 22:46:46,801][dogs_pipeline][INFO] - Batch Size: 32
+[2026-04-03 22:46:46,801][dogs_pipeline][INFO] - Max Epochs: 1
+[2026-04-03 22:46:46,802][dogs_pipeline][INFO] - ==================================================
+[2026-04-03 22:46:46,802][dogs_pipeline][INFO] - DIRECTORIES:
+[2026-04-03 22:46:46,803][dogs_pipeline][INFO] -   checkpoints: experiments/resnet50_adam_cosine_annealing/checkpoints
+[2026-04-03 22:46:46,803][dogs_pipeline][INFO] -   logs: experiments/resnet50_adam_cosine_annealing/logs
+[2026-04-03 22:46:46,804][dogs_pipeline][INFO] -   tensorboard: experiments/resnet50_adam_cosine_annealing/tensorboard
+[2026-04-03 22:46:46,804][dogs_pipeline][INFO] -   wandb: experiments/resnet50_adam_cosine_annealing/wandb
+[2026-04-03 22:46:46,805][dogs_pipeline][INFO] -   hydra: experiments/resnet50_adam_cosine_annealing/hydra
+[2026-04-03 22:46:46,806][dogs_pipeline][INFO] - ==================================================
+[2026-04-03 22:46:46,813][dogs_pipeline][INFO] - Setting up data module...
+[2026-04-03 22:46:46,814][dogs_pipeline][INFO] - Setting up model...
+[2026-04-03 22:46:47,101][dogs_pipeline][INFO] - Setting up trainer...
+[2026-04-03 22:46:47,123][dogs_pipeline][INFO] - Starting training...
