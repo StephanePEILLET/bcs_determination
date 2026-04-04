@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch & Machine Learning Checkpoints
+experiments/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Virtual Environments
+test_env/
+env/
+venv/
+.env/
+
+# Logs & outputs
+*.log
+pip_log.txt
+output.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
