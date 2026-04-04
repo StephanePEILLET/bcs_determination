@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-Stanford Bcs Inference Script
+BCS Determination Inference Script
 """
 
 import os
@@ -15,7 +14,7 @@ import torch.nn.functional as F
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from bcs_pipeline.lightning_module.stanford_bcs_module import LitStanfordBcs
+from bcs_pipeline.lightning_module.bcs_determination_module import LitBcsDetermination
 from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
 
 def parse_args():
@@ -44,7 +43,7 @@ def predict(image_path: str, checkpoint_path: str, model_name: str, num_classes:
     
     print(f"Loading model from {checkpoint_path}...")
     try:
-        model = LitStanfordBcs.load_from_checkpoint(
+        model = LitBcsDetermination.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
             model_name=model_name,
             num_classes=num_classes,

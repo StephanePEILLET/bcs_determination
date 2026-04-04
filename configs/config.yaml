@@ -1,4 +1,4 @@
-# Configuration parameter for Stanford Bcs Classification
+# Configuration parameter for BCS Determination Classification
 defaults:
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
@@ -29,7 +29,7 @@ precision: "16-mixed"
 # Logging options
 use_tensorboard: true
 use_wandb: false
-wandb_project: "stanford_bcs_classification"
+wandb_project: "bcs_determination_classification"
 
 trainer:
   accelerator: "auto"
@@ -54,7 +54,7 @@ hydra:
     sampler:
       seed: ${seed}
     direction: maximize
-    study_name: stanford_bcs_study
+    study_name: bcs_determination_study
     storage: null
     n_trials: ${n_trials}
     n_jobs: 1
@@ -63,7 +63,7 @@ hydra:
       optimizer_name: choice("adam", "sgd")
       batch_size: choice(16, 32, 64)
   run:
-    dir: experiments/stanford_bcs/${now:%Y-%m-%d_%H-%M-%S}
+    dir: experiments/bcs_determination/${now:%Y-%m-%d_%H-%M-%S}
   sweep:
-    dir: experiments/stanford_bcs/multirun_${now:%Y-%m-%d_%H-%M-%S}
+    dir: experiments/bcs_determination/multirun_${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.num}

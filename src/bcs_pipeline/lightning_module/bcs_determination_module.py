@@ -8,9 +8,9 @@ from torchmetrics.classification.accuracy import Accuracy
 from bcs_pipeline.models.resnet_transfer import ResNetTransfer
 from bcs_pipeline.models.vit_transfer import ViTTransfer
 
-class LitStanfordBcs(LightningModule):
+class LitBcsDetermination(LightningModule):
     """
-    LightningModule for Stanford Bcs Classification.
+    LightningModule for BCS Determination.
     """
     def __init__(
         self,

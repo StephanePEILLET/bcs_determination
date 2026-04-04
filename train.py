@@ -1,5 +1,5 @@
 """
-Stanford Bcs Training Pipeline
+BCS Determination Training Pipeline
 """
 
 import os
@@ -15,7 +15,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
-from bcs_pipeline.lightning_module.stanford_bcs_module import LitStanfordBcs
+from bcs_pipeline.lightning_module.bcs_determination_module import LitBcsDetermination
 from bcs_pipeline.utils.config_utils import setup_experiment_dirs, validate_config
 from bcs_pipeline.utils.logging_utils import setup_logging, log_experiment_info, print_config, print_config_rich
 
@@ -56,7 +56,7 @@ def train(cfg: DictConfig) -> float:
     
     # Instantiate model
     logger.info("Setting up model...")
-    model = LitStanfordBcs(
+    model = LitBcsDetermination(
         model_name=cfg.model_name,
         num_classes=cfg.num_classes,
         lr=cfg.lr,
@@ -95,7 +95,7 @@ def train(cfg: DictConfig) -> float:
     if cfg.use_tensorboard:
         tensorboard_logger = pl.loggers.TensorBoardLogger(
             save_dir=experiment_dirs["tensorboard"],
-            name="stanford_bcs",
+            name="bcs_determination",
             version=None
         )
         loggers.append(tensorboard_logger)

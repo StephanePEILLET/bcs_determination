@@ -1,4 +1,4 @@
-# Stanford Bcs Classification
+# BCS Determination Classification
 
 This repository contains a PyTorch Lightning based pipeline for classifying the 120 dog breeds from the [Stanford Bcs Dataset](http://vision.stanford.edu/aditya86/ImageNetBcs/).
 
@@ -46,7 +46,7 @@ python train.py data_dir=/path/to/stanford_bcs/images batch_size=32 max_epochs=5
 ```
 
 By default:
-- Experiment artifacts (logs, checkpoints, tensorboard metrics) will be exported to `experiments/stanford_bcs/<date>_<time>`.
+- Experiment artifacts (logs, checkpoints, tensorboard metrics) will be exported to `experiments/bcs_determination/<date>_<time>`.
 - Models are tracked by their validation accuracy.
 
 ## Inference
@@ -56,7 +56,7 @@ Once you have trained the model and obtained a PyTorch Lightning checkpoint (`.c
 ```bash
 python inference.py \
   --image_path sample_dog.jpg \
-  --checkpoint_path experiments/stanford_bcs/.../checkpoints/epoch=...ckpt \
+  --checkpoint_path experiments/bcs_determination/.../checkpoints/epoch=...ckpt \
   --data_dir /path/to/stanford_bcs/images
 ```
 
@@ -81,7 +81,7 @@ The Hydra-decorated central training loop.
 - **`train(cfg: DictConfig) -> float`**: Sets up early stopping, TensorBoard logging, and triggers `trainer.fit()`. For hyperparameter tuning, it resolves and returns `checkpoint_callback.best_model_score` (`val_acc`), feeding the metric back to the Optuna sweeps.
 
 ### 2. PyTorch Lightning Backend (`src/bcs_pipeline/`)
-- **`LitStanfordBcs` (`lightning_module/stanford_bcs_module.py`)**: 
+- **`LitBcsDetermination` (`lightning_module/bcs_determination_module.py`)**: 
   - Subclasses `LightningModule`. Abstract class interacting with either standard ResNets or advanced ViTs (`model_name="vit"`).
   - *`validation_step`*: Orchestrates custom TensorBoard tracking by rendering a `make_grid` output of the batches for deep visual inspection.
   - *`configure_optimizers`*: Retrieves dictionary configurations from Hydra to load advanced schedulers (like `CosineAnnealingLR`).
@@ -105,6 +105,6 @@ Navigate to `http://localhost:8000/docs` to view the interactive swagger documen
 ### Docker (Production)
 A `Dockerfile` is provided which automatically sets up the complete Conda environment securely and launches the API.
 ```bash
-docker build -t stanford_bcs_api .
-docker run -p 8000:8000 stanford_bcs_api
+docker build -t bcs_determination_api .
+docker run -p 8000:8000 bcs_determination_api
 ```
