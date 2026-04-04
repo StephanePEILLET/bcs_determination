@@ -61,7 +61,10 @@ def train(cfg: DictConfig) -> float:
         num_classes=cfg.num_classes,
         lr=cfg.lr,
         optimizer_name=cfg.optimizer_name,
-        scheduler_config=cfg.scheduler_config
+        weight_decay=cfg.get("weight_decay", 1e-4),
+        scheduler_config=cfg.scheduler_config,
+        regularization=cfg.get("regularization", {}),
+        tensorboard=cfg.get("tensorboard", {}),
     )
     
     # Setup callbacks
@@ -125,6 +128,7 @@ def train(cfg: DictConfig) -> float:
         logger=loggers,
         log_every_n_steps=cfg.log_every_n_steps,
         val_check_interval=cfg.val_check_interval,
+        gradient_clip_val=cfg.get("gradient_clip_val", None),
         enable_progress_bar=True,
         enable_model_summary=True,
         deterministic=True,

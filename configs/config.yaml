@@ -8,11 +8,22 @@ model_name: "resnet50"
 num_classes: 120
 lr: 0.001
 optimizer_name: "adam"
+weight_decay: 1e-4
 
 scheduler_config:
   name: "cosine_annealing"
   T_max: 20
+  eta_min: 1e-6
   monitor: "val_loss"
+
+# Regularization (anti-overfitting)
+regularization:
+  dropout: 0.3
+  label_smoothing: 0.1
+  mixup_alpha: 0.2       # Set to 0.0 to disable
+  cutmix_alpha: 1.0      # Set to 0.0 to disable
+  mixup_prob: 0.5        # Probability of applying mixup vs cutmix when both are enabled
+  stochastic_depth: 0.1  # Drop path rate (ResNet/ViT)
 
 data_dir: "data/stanford_dogs"
 image_size: 224
@@ -25,9 +36,18 @@ patience: 5
 log_every_n_steps: 10
 val_check_interval: 1.0
 precision: "16-mixed"
+gradient_clip_val: 1.0  # Gradient clipping for stability
 
-# Logging options
+# TensorBoard logging options
 use_tensorboard: true
+tensorboard:
+  log_graph: true                  # Log model computational graph
+  log_weight_histograms: true      # Log weight/gradient histograms every N epochs
+  histogram_every_n_epochs: 5
+  log_images: true                 # Log sample prediction images
+  log_confusion_matrix: true       # Log confusion matrix at end of each validation
+  log_pr_curve: true               # Log precision-recall curves
+  log_embedding: false             # Log embedding projections (heavy)
 use_wandb: false
 wandb_project: "bcs_determination_classification"
 
