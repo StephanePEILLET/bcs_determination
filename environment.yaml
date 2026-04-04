@@ -2,8 +2,8 @@ name: bcs_analysis
 channels:
   - pytorch
   - nvidia
-  - defaults
   - conda-forge
+  - defaults
 dependencies:
   - python=3.10
   - pip
@@ -11,6 +11,8 @@ dependencies:
   - torchvision>=0.15.0
   - torchaudio
   - pytorch-cuda=11.8 # Or 12.1 depending on the GPU
+  - mkl<2025  # MKL 2025+ requires libittnotify.so (ITT API) which conflicts with PyTorch
+  - ittapi  # Required by MKL for Intel ITT profiling symbols
   - pip:
     - pytorch-lightning>=2.0.0
     - torchmetrics>=0.11.0
@@ -27,4 +29,5 @@ dependencies:
     - hydra-optuna-sweeper>=1.2.0
     - fastapi>=0.100.0
     - uvicorn>=0.22.0
+    - prodict>=0.8.0
     - python-multipart>=0.0.6

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python
 __pycache__/
 *.py[cod]
@@ -25,5 +26,28 @@ pip_log.txt
 output.log
 
 # OS generated files
+=======
+# Data
+data/
+
+# Experiments outputs
+experiments/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+>>>>>>> 5d8f7e6 (ajout gitignore et print config avec rich.)
 .DS_Store
 Thumbs.db

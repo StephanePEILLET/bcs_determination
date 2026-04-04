@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Stanford Bcs Training Pipeline
 """
@@ -11,23 +10,22 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-import torch
 import pytorch_lightning as pl
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from rich import print as rprint
-from rich.tree import Tree
-from rich.syntax import Syntax
-from pytorch_lightning.profilers import PyTorchProfiler
 
 from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
 from bcs_pipeline.lightning_module.stanford_bcs_module import LitStanfordBcs
 from bcs_pipeline.utils.config_utils import setup_experiment_dirs, validate_config
-from bcs_pipeline.utils.logging_utils import setup_logging, log_experiment_info
+from bcs_pipeline.utils.logging_utils import setup_logging, log_experiment_info, print_config, print_config_rich
 
 
 @hydra.main(config_path="configs", config_name="config", version_base=None)
 def train(cfg: DictConfig) -> float:
+    # Validate configuration
+    if not validate_config(cfg):
+        raise ValueError("Configuration validation failed. Check your config.yaml.")
+
     # Setup experiment directories
     experiment_dirs = setup_experiment_dirs(cfg)
     
@@ -40,12 +38,9 @@ def train(cfg: DictConfig) -> float:
     # Log experiment info (this calls wandb initialization conditionally inside)
     log_experiment_info(logger, cfg, experiment_dirs)
     
-    # Print config tree
-    tree = Tree("TRAINING CONFIG", guide_style="bold bright_blue")
-    yaml_config = OmegaConf.to_yaml(cfg, resolve=True)
-    syntax = Syntax(yaml_config, "yaml", theme="monokai", line_numbers=False)
-    tree.add(syntax)
-    rprint(tree)
+    # Print config to console (Rich tree) and to log file
+    print_config_rich(cfg)
+    print_config(cfg, logger=logger)
     
     # Set random seeds for reproducibility
     pl.seed_everything(cfg.seed, workers=True)
@@ -125,6 +120,7 @@ def train(cfg: DictConfig) -> float:
         devices=cfg.trainer.devices,
         strategy=cfg.trainer.get("strategy", "auto"),
         sync_batchnorm=cfg.trainer.get("sync_batchnorm", False),
+        fast_dev_run=cfg.trainer.get("fast_dev_run", False),
         callbacks=callbacks,
         logger=loggers,
         log_every_n_steps=cfg.log_every_n_steps,

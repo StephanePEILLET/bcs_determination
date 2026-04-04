@@ -1,10 +1,18 @@
 import os
+import tarfile
+import logging
 from typing import Optional, Tuple
+from urllib.request import urlretrieve
+
 import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
+
+logger = logging.getLogger("bcs_pipeline")
+
+DATASET_URL = "http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar"
 
 class StanfordBcsDataModule(LightningDataModule):
     """
@@ -14,7 +22,7 @@ class StanfordBcsDataModule(LightningDataModule):
 
     def __init__(
         self,
-        data_dir: str = "/home/SPeillet/Downloads/stanford_bcs/images",
+        data_dir: str = "data/stanford_dogs",
         batch_size: int = 64,
         num_workers: int = 4,
         image_size: int = 224,
@@ -63,9 +71,27 @@ class StanfordBcsDataModule(LightningDataModule):
         self.num_classes = 120
 
     def prepare_data(self):
-        """Verify data directory exists. Nothing to download here."""
-        if not os.path.exists(os.path.join(self.data_dir, "Images")):
-            raise FileNotFoundError(f"Data directory {os.path.join(self.data_dir, 'Images')} not found.")
+        """Download and extract dataset if not already present."""
+        images_dir = os.path.join(self.data_dir, "Images")
+        if os.path.exists(images_dir):
+            return
+
+        os.makedirs(self.data_dir, exist_ok=True)
+        tar_path = os.path.join(self.data_dir, "images.tar")
+
+        if not os.path.exists(tar_path):
+            logger.info(f"Downloading Stanford Dogs dataset to {tar_path}...")
+            urlretrieve(DATASET_URL, tar_path)
+            logger.info("Download complete.")
+
+        logger.info(f"Extracting {tar_path}...")
+        with tarfile.open(tar_path, "r") as tar:
+            tar.extractall(path=self.data_dir)
+        logger.info(f"Dataset ready at {images_dir}")
+
+        # Cleanup tar file
+        if os.path.exists(tar_path):
+            os.remove(tar_path)
 
     def setup(self, stage: Optional[str] = None):
         """Load data and apply splits."""

@@ -1,7 +1,7 @@
 """
 Configuration validation using Pydantic and dataclasses.
 
-This module provides type-safe configuration validation for the MNIST pipeline.
+This module provides type-safe configuration validation for the Stanford BCS pipeline.
 """
 
 from dataclasses import dataclass
@@ -36,22 +36,22 @@ class InferenceConfig:
     save_results: bool = True
 
 
-class MNISTConfig(BaseModel):
+class BCSConfig(BaseModel):
     """
-    Main configuration class for the MNIST pipeline.
+    Main configuration class for the Stanford BCS pipeline.
     
     This class validates all configuration parameters using Pydantic.
     """
     
     model_config = ConfigDict(
         validate_assignment=True,
-        extra="forbid",  # Reject unknown fields
+        extra="ignore",  # Ignore extra fields from Hydra (e.g. n_trials, hydra internals)
         use_enum_values=True
     )
     
     # Model configuration
-    model_name: Literal["simple_cnn", "efficientnet_b0"] = Field(
-        default="simple_cnn",
+    model_name: Literal["resnet50", "vit"] = Field(
+        default="resnet50",
         description="Name of the model architecture to use"
     )
     
@@ -74,7 +74,17 @@ class MNISTConfig(BaseModel):
     # Data configuration
     data_dir: str = Field(
         default="data/",
-        description="Directory for MNIST dataset"
+        description="Directory for Stanford BCS dataset"
+    )
+    image_size: int = Field(
+        default=224,
+        gt=0,
+        description="Image size for training"
+    )
+    num_classes: int = Field(
+        default=120,
+        gt=0,
+        description="Number of classes in the dataset"
     )
     batch_size: int = Field(
         default=64,
@@ -127,7 +137,7 @@ class MNISTConfig(BaseModel):
         description="Enable Weights & Biases logging"
     )
     wandb_project: str = Field(
-        default="pipeline_MNIST_v2",
+        default="stanford_bcs_classification",
         description="Weights & Biases project name"
     )
     
@@ -162,8 +172,8 @@ class MNISTConfig(BaseModel):
     def validate_cross_fields(self):
         """Validate cross-field dependencies."""
         # Validate batch size based on model
-        if self.model_name == "efficientnet_b0" and self.batch_size > 128:
-            raise ValueError("Batch size too large for EfficientNet-B0. Use <= 128.")
+        if self.model_name == "vit" and self.batch_size > 128:
+            raise ValueError("Batch size too large for ViT. Use <= 128.")
         
         # Validate learning rate based on optimizer
         if self.optimizer_name == "sgd" and self.lr > 0.1:
@@ -176,7 +186,7 @@ class MNISTConfig(BaseModel):
         return self
 
 
-def validate_hydra_config(cfg_dict: dict) -> MNISTConfig:
+def validate_hydra_config(cfg_dict: dict) -> BCSConfig:
     """
     Validate Hydra configuration dictionary.
     
@@ -184,7 +194,7 @@ def validate_hydra_config(cfg_dict: dict) -> MNISTConfig:
         cfg_dict: Configuration dictionary from Hydra
         
     Returns:
-        Validated MNISTConfig object
+        Validated BCSConfig object
         
     Raises:
         ValueError: If configuration is invalid
@@ -192,7 +202,7 @@ def validate_hydra_config(cfg_dict: dict) -> MNISTConfig:
     try:
         # Convert nested dataclasses to dicts for Pydantic
         config_dict = _convert_dataclasses_to_dict(cfg_dict)
-        return MNISTConfig(**config_dict)
+        return BCSConfig(**config_dict)
     except Exception as e:
         raise ValueError(f"Configuration validation failed: {e}")
 
@@ -216,15 +226,15 @@ def get_config_schema() -> dict:
     Returns:
         JSON schema dictionary
     """
-    return MNISTConfig.model_json_schema()
+    return BCSConfig.model_json_schema()
 
 
-def print_config_validation_summary(config: MNISTConfig) -> None:
+def print_config_validation_summary(config: BCSConfig) -> None:
     """
     Print a summary of the validated configuration.
     
     Args:
-        config: Validated MNISTConfig object
+        config: Validated BCSConfig object
     """
     print("=" * 50)
     print("CONFIGURATION VALIDATION SUMMARY")

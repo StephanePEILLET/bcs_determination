@@ -1,5 +1,5 @@
 """
-Configuration utilities for the MNIST pipeline.
+Configuration utilities for the Stanford BCS pipeline.
 """
 
 import os
@@ -58,7 +58,7 @@ def get_experiment_dir(cfg: DictConfig) -> Path:
         Path to experiment directory
     """
     base_dir = Path("experiments")
-    experiment_name = f"{cfg.model_name}_{cfg.optimizer_name}_{cfg.scheduler_config.name}"
+    experiment_name = f"{cfg.model_name}_{cfg.optimizer_name}_{cfg.scheduler_config['name']}"  
     return base_dir / experiment_name
 
 
@@ -73,7 +73,7 @@ def setup_experiment_dirs(cfg: DictConfig) -> Dict[str, Path]:
         Dictionary with experiment directory paths
     """
     # Create experiment name based on configuration
-    experiment_name = f"{cfg.model_name}_{cfg.optimizer_name}_{cfg.scheduler_config.name}"
+    experiment_name = f"{cfg.model_name}_{cfg.optimizer_name}_{cfg.scheduler_config['name']}"
     
     # Base experiments directory
     experiments_dir = Path("experiments") / experiment_name
@@ -107,7 +107,7 @@ def get_config_summary(cfg: DictConfig) -> dict:
     return {
         "model": cfg.model_name,
         "optimizer": cfg.optimizer_name,
-        "scheduler": cfg.scheduler_config.name,
+        "scheduler": cfg.scheduler_config["name"],
         "lr": cfg.lr,
         "batch_size": cfg.batch_size,
         "max_epochs": cfg.max_epochs,

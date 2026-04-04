@@ -14,7 +14,7 @@ scheduler_config:
   T_max: 20
   monitor: "val_loss"
 
-data_dir: "/home/SPeillet/Downloads/stanford_bcs/images"
+data_dir: "data/stanford_dogs"
 image_size: 224
 batch_size: 32
 num_workers: 8
@@ -44,6 +44,11 @@ inference:
   batch_size: 64
   save_results: true
 
+# Hyperparameter optimization
+n_trials: 10
+n_epochs_per_trial: 3
+timeout: null
+
 hydra:
   sweeper:
     sampler:
@@ -62,8 +67,3 @@ hydra:
   sweep:
     dir: experiments/stanford_bcs/multirun_${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.num}
-
-# Hyperparameter optimization (if used later)
-n_trials: 10
-n_epochs_per_trial: 3
-timeout: null
