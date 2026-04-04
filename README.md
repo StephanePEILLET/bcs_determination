@@ -10,9 +10,11 @@ bcs_analysis/
 ├── src/
 │   └── bcs_pipeline/    # Python package for models, datamodules, logging, etc.
 ├── experiments/          # Directory where Hydra saves experiment logs/checkpoints
+├── app.py                # FastAPI endpoints
 ├── environment.yaml      # Conda environment file
 ├── train.py              # Main training script
 ├── inference.py          # Script for making predictions on new images
+├── optuna_multi_gpu_tutorial.ipynb # Tutorial for multi-GPU hyperparameter sweep
 ├── visualize_results.ipynb # Jupyter Notebook for visual inference tests
 └── README.md             # This file
 ```
@@ -22,8 +24,10 @@ bcs_analysis/
 1. Create the Conda environment using the provided YAML file:
    ```bash
    conda env create -f environment.yaml
-   conda activate stanford_bcs
+   conda activate bcs_analysis
    ```
+   > **Note:** The `environment.yaml` includes heavy `pip` dependencies. Conda installs these silently, so the installation may appear frozen for 5-10 minutes. Please be patient and do not interrupt (`Ctrl+C`) the process, otherwise it will fail with `critical libmamba pip failed to install packages`.
+
    *(Ensure you have NVIDIA drivers and CUDA configured correctly if training on a GPU).*
 
 2. Data Preparation:
