@@ -22,6 +22,13 @@ class SchedulerConfig:
 
 
 @dataclass
+class FinetuningConfig:
+    """Configuration for two-phase transfer learning fine-tuning."""
+    unfreeze_at_epoch: int = 5
+    backbone_lr_multiplier: float = 0.1
+
+
+@dataclass
 class TrainerConfig:
     """Configuration for PyTorch Lightning trainer."""
     accelerator: Literal["auto", "cpu", "gpu", "tpu"] = "auto"
@@ -112,6 +119,10 @@ class BCSConfig(BaseModel):
     )
     
     # Training parameters
+    finetuning: Optional[Union[Dict[str, Any], FinetuningConfig]] = Field(
+        default=None,
+        description="Configuration for transfer learning fine-tuning"
+    )
     max_epochs: int = Field(
         default=10,
         gt=0,
