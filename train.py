@@ -1,5 +1,22 @@
 """
-BCS Determination Training Pipeline
+BCS Determination – Training entry-point.
+
+This script is intentionally kept **lightweight**: all heavy-lifting
+(callbacks, loggers, trainer construction, stats) is delegated to reusable
+modules inside ``src/bcs_pipeline/``.
+
+Usage
+-----
+.. code-block:: bash
+
+    # Default config (configs/config.yaml)
+    python train.py
+
+    # Override hyper-parameters on the fly
+    python train.py data_dir=/data/stanford_dogs batch_size=64 max_epochs=50
+
+    # Full reproducibility: set seed, accelerator, precision
+    python train.py seed=123 trainer.accelerator=gpu precision=16-mixed
 """
 
 import os
@@ -7,55 +24,107 @@ import sys
 import logging
 from pathlib import Path
 
-# Add src to path
+# ── Make the ``src/`` package importable ─────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import pytorch_lightning as pl
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
 from bcs_pipeline.lightning_module.bcs_determination_module import LitBcsDetermination
-from bcs_pipeline.utils.config_utils import setup_experiment_dirs, validate_config
-from bcs_pipeline.utils.logging_utils import setup_logging, log_experiment_info, print_config, print_config_rich
+from bcs_pipeline.trainer_factory import build_trainer, get_checkpoint_callback
+from bcs_pipeline.utils.config_utils import (
+    setup_experiment_dirs,
+    validate_config,
+    save_config_snapshot,
+)
+from bcs_pipeline.utils.logging_utils import (
+    setup_logging,
+    log_experiment_info,
+    print_config,
+    print_config_rich,
+)
+from bcs_pipeline.utils.dataset_stats import (
+    compute_all_stats,
+    display_stats_rich,
+    log_stats,
+    save_stats_json,
+)
 
 
 @hydra.main(config_path="configs", config_name="config", version_base=None)
 def train(cfg: DictConfig) -> float:
-    # Validate configuration
+    """Run one training experiment and return the best validation accuracy.
+
+    The function orchestrates the following steps:
+
+    1. Validate the Hydra configuration.
+    2. Create experiment directories (checkpoints, logs, splits, stats, …).
+    3. **Save a config snapshot** (YAML + JSON) for full reproducibility.
+    4. Seed all RNGs globally.
+    5. Set up the DataModule with **stratified splits** (persisted to JSON).
+    6. **Compute and display dataset statistics** per class (Rich tables).
+    7. Build the model.
+    8. Build the Trainer (callbacks + loggers wired automatically).
+    9. Train and evaluate.
+
+    Parameters
+    ----------
+    cfg:
+        Hydra-managed configuration (merged from YAML + CLI overrides).
+
+    Returns
+    -------
+    float
+        Best ``val/acc`` observed during training (used as the Optuna
+        objective when running hyper-parameter sweeps).
+    """
+    # ── 1. Validate & set up experiment artefacts ────────────────────
     if not validate_config(cfg):
         raise ValueError("Configuration validation failed. Check your config.yaml.")
 
-    # Setup experiment directories
     experiment_dirs = setup_experiment_dirs(cfg)
-    
-    # Setup logging
+
     logger = setup_logging(
         log_file=experiment_dirs["logs"] / "train.log",
-        level=logging.INFO
+        level=logging.INFO,
     )
-    
-    # Log experiment info (this calls wandb initialization conditionally inside)
     log_experiment_info(logger, cfg, experiment_dirs)
-    
-    # Print config to console (Rich tree) and to log file
     print_config_rich(cfg)
     print_config(cfg, logger=logger)
-    
-    # Set random seeds for reproducibility
+
+    # ── 2. Save config snapshot for reproducibility ──────────────────
+    snapshot_paths = save_config_snapshot(cfg, experiment_dirs)
+    logger.info("Config snapshot saved → %s", snapshot_paths["yaml"])
+
+    # ── 3. Reproducibility ───────────────────────────────────────────
     pl.seed_everything(cfg.seed, workers=True)
-    
-    # Instantiate data module
-    logger.info("Setting up data module...")
+
+    # ── 4. Data (stratified split + manifest) ────────────────────────
+    logger.info("Setting up data module (stratified splits)…")
     data_module = StanfordBcsDataModule(
         data_dir=cfg.data_dir,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
         image_size=cfg.image_size,
+        val_split=cfg.get("val_split", 0.1),
+        test_split=cfg.get("test_split", 0.1),
+        seed=cfg.seed,
+        split_dir=str(experiment_dirs["splits"]),
     )
-    
-    # Instantiate model
-    logger.info("Setting up model...")
+    data_module.prepare_data()
+    data_module.setup()
+
+    # ── 5. Dataset statistics ────────────────────────────────────────
+    logger.info("Computing dataset statistics…")
+    stats = compute_all_stats(data_module)
+    display_stats_rich(stats)
+    log_stats(stats, log=logger)
+    save_stats_json(stats, experiment_dirs["stats"] / "dataset_stats.json")
+
+    # ── 6. Model ─────────────────────────────────────────────────────
+    logger.info("Setting up model…")
     model = LitBcsDetermination(
         model_name=cfg.model_name,
         num_classes=cfg.num_classes,
@@ -66,96 +135,34 @@ def train(cfg: DictConfig) -> float:
         regularization=cfg.get("regularization", {}),
         tensorboard=cfg.get("tensorboard", {}),
     )
-    
-    # Setup callbacks
-    callbacks = []
-    
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        dirpath=experiment_dirs["checkpoints"],
-        filename="epoch={epoch:02d}-val_acc={val_acc:.2f}-{step}",
-        monitor="val_acc",
-        mode="max",
-        save_top_k=3,
-        save_last=True,
-        verbose=True
-    )
-    callbacks.append(checkpoint_callback)
-    
-    early_stopping_callback = pl.callbacks.EarlyStopping(
-        monitor="val_acc",
-        patience=cfg.patience,
-        mode="max",
-        verbose=True
-    )
-    callbacks.append(early_stopping_callback)
-    
-    if cfg.use_tensorboard or getattr(cfg, "use_wandb", False):
-        lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
-        callbacks.append(lr_monitor)
-    
-    # Setup loggers
-    loggers = []
-    if cfg.use_tensorboard:
-        tensorboard_logger = pl.loggers.TensorBoardLogger(
-            save_dir=experiment_dirs["tensorboard"],
-            name="bcs_determination",
-            version=None
-        )
-        loggers.append(tensorboard_logger)
-    
-    if getattr(cfg, "use_wandb", False):
-        try:
-            wandb_logger = pl.loggers.WandbLogger(
-                project=cfg.wandb_project,
-                name=f"{cfg.model_name}_bcs",
-                save_dir=experiment_dirs["wandb"],
-                log_model=True
-            )
-            loggers.append(wandb_logger)
-        except ImportError:
-            logger.warning("wandb is not installed, skipping wandb logging")
-    
-    # Setup trainer
-    logger.info("Setting up trainer...")
-    trainer_kwargs = dict(
-        max_epochs=cfg.max_epochs,
-        accelerator=cfg.trainer.accelerator,
-        devices=cfg.trainer.devices,
-        strategy=cfg.trainer.get("strategy", "auto"),
-        sync_batchnorm=cfg.trainer.get("sync_batchnorm", False),
-        fast_dev_run=cfg.trainer.get("fast_dev_run", False),
-        callbacks=callbacks,
-        logger=loggers,
-        log_every_n_steps=cfg.log_every_n_steps,
-        val_check_interval=cfg.val_check_interval,
-        gradient_clip_val=cfg.get("gradient_clip_val", None),
-        enable_progress_bar=True,
-        enable_model_summary=True,
-        deterministic=True,
-        precision=cfg.precision
-    )
-    
-    trainer = pl.Trainer(**trainer_kwargs)
-    
-    # Train the model
-    logger.info("Starting training...")
+
+    # ── 7. Trainer (callbacks + loggers wired automatically) ─────────
+    logger.info("Setting up trainer…")
+    trainer = build_trainer(cfg, experiment_dirs)
+
+    # ── 8. Train ─────────────────────────────────────────────────────
+    logger.info("Starting training…")
     ckpt_path = cfg.trainer.get("resume_from_checkpoint")
     if ckpt_path and not os.path.exists(ckpt_path):
-        logger.warning(f"Checkpoint {ckpt_path} not found. Starting from scratch.")
+        logger.warning("Checkpoint %s not found – starting from scratch.", ckpt_path)
         ckpt_path = None
-        
+
     trainer.fit(model, datamodule=data_module, ckpt_path=ckpt_path)
-    
-    # Test the model
-    logger.info("Running final evaluation...")
+
+    # ── 9. Evaluate ──────────────────────────────────────────────────
+    logger.info("Running final evaluation…")
     trainer.test(model, datamodule=data_module)
-    
-    # Log final results
+
+    # ── 10. Report ───────────────────────────────────────────────────
+    ckpt_cb = get_checkpoint_callback(trainer)
+    if ckpt_cb:
+        logger.info("Best model saved at: %s", ckpt_cb.best_model_path)
+        val_acc = ckpt_cb.best_model_score
+        return float(val_acc.item()) if val_acc is not None else 0.0
+
     logger.info("Training completed!")
-    logger.info(f"Best model saved at: {checkpoint_callback.best_model_path}")
-    
-    val_acc = checkpoint_callback.best_model_score
-    return float(val_acc.item()) if val_acc is not None else 0.0
+    return 0.0
+
 
 if __name__ == "__main__":
     train()

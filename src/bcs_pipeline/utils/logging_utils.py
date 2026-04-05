@@ -107,7 +107,7 @@ def get_logger(name: str = "bcs_pipeline") -> logging.Logger:
 
 def log_experiment_info(logger: logging.Logger, cfg, experiment_dirs: dict):
     """
-    Log experiment information.
+    Log experiment information including model, training params, and directories.
     
     Args:
         logger: Logger instance
@@ -123,6 +123,13 @@ def log_experiment_info(logger: logging.Logger, cfg, experiment_dirs: dict):
     logger.info(f"Learning Rate: {cfg.lr}")
     logger.info(f"Batch Size: {cfg.batch_size}")
     logger.info(f"Max Epochs: {cfg.max_epochs}")
+    logger.info(f"Seed: {cfg.seed}")
+    logger.info(f"Val Split: {cfg.get('val_split', 0.1)} | Test Split: {cfg.get('test_split', 0.1)}")
+    logger.info("=" * 50)
+    logger.info("DIRECTORIES:")
+    for name, path in experiment_dirs.items():
+        logger.info(f"  {name}: {path}")
+    logger.info("=" * 50)
 
 
 def print_config(config: DictConfig | prodict.Prodict | str, logger: Optional[logging.Logger] = None) -> None:

@@ -98,6 +98,18 @@ class BCSConfig(BaseModel):
         le=32,
         description="Number of workers for data loading"
     )
+    val_split: float = Field(
+        default=0.1,
+        gt=0.0,
+        lt=1.0,
+        description="Fraction of data for validation (stratified)"
+    )
+    test_split: float = Field(
+        default=0.1,
+        gt=0.0,
+        lt=1.0,
+        description="Fraction of data for test (stratified)"
+    )
     
     # Training parameters
     max_epochs: int = Field(
