@@ -4,59 +4,98 @@ defaults:
   - override hydra/sweeper/sampler: tpe
 
 seed: 42
-model_name: "resnet50"
+
+# ── Model ────────────────────────────────────────────────────────────
+# Options: "resnet50" | "vit"
+#   - "resnet50" : ResNet-50 pre-trained on ImageNet (23M params, robust, good default)
+#   - "vit"      : Vision Transformer (google/vit-base-patch16-224-in21k, heavier, needs more data)
+model_name: "vit"
 num_classes: 120
+
+# ── Optimizer ────────────────────────────────────────────────────────
+# lr: learning rate. Typical ranges:
+#   - adam: 1e-4, 3e-4, 1e-3, 3e-3
+#   - sgd:  1e-3, 5e-3, 1e-2, 5e-2   (must be <= 0.1)
 lr: 0.001
+
+# optimizer_name: "adam" | "sgd"
+#   - "adam" : AdamW (adaptive, good default, less sensitive to lr)
+#   - "sgd"  : SGD with momentum=0.9 (can generalize better, needs careful lr tuning)
 optimizer_name: "adam"
+
 weight_decay: 1e-4
 
+# ── Scheduler ────────────────────────────────────────────────────────
+# name: "none" | "cosine_annealing" | "reduce_lr_on_plateau"
+#   - "none"               : constant learning rate
+#   - "cosine_annealing"   : smooth cosine decay (needs T_max, eta_min)
+#   - "reduce_lr_on_plateau": reduce lr when metric stagnates (needs monitor, factor, patience)
 scheduler_config:
   name: "cosine_annealing"
   T_max: 20
   eta_min: 1e-6
   monitor: "val_loss"
+# Example — reduce_lr_on_plateau:
+# scheduler_config:
+#   name: "reduce_lr_on_plateau"
+#   monitor: "val_loss"
+#   factor: 0.1
+#   patience: 3
 
-# Regularization (anti-overfitting)
+# ── Regularization (anti-overfitting) ────────────────────────────────
 regularization:
-  dropout: 0.3
-  label_smoothing: 0.1
-  mixup_alpha: 0.2       # Set to 0.0 to disable
-  cutmix_alpha: 1.0      # Set to 0.0 to disable
-  mixup_prob: 0.5        # Probability of applying mixup vs cutmix when both are enabled
-  stochastic_depth: 0.1  # Drop path rate (ResNet/ViT)
+  dropout: 0.3            # 0.0 = disabled, typical: 0.1–0.5
+  label_smoothing: 0.1    # 0.0 = disabled, typical: 0.05–0.2
+  mixup_alpha: 0.2        # 0.0 = disabled, typical: 0.1–0.4
+  cutmix_alpha: 1.0       # 0.0 = disabled, typical: 0.5–1.0
+  mixup_prob: 0.5         # Probability of mixup vs cutmix when both > 0
+  stochastic_depth: 0.1   # 0.0 = disabled, typical: 0.05–0.2 (ResNet only)
 
+# ── Data ─────────────────────────────────────────────────────────────
 data_dir: "data/stanford_dogs"
-image_size: 224
-batch_size: 32
-num_workers: 8
-val_split: 0.1          # Fraction of data for validation (stratified)
-test_split: 0.1         # Fraction of data for test (stratified)
+image_size: 224           # 224 (default) | 256 | 288 | 384 (higher = more detail but slower)
+batch_size: 32            # 16 | 32 | 64 (limited by GPU VRAM; vit <= 128)
+num_workers: 8            # 0 = main thread; typical: 4–16
+val_split: 0.1
+test_split: 0.1
+
+# ── Training ─────────────────────────────────────────────────────────
 max_epochs: 100
 patience: 15
 
-# Training parameters
-task: "classification" # or "segmentation"
-finetuning:
-  unfreeze_at_epoch: 5        # Epoch to unfreeze the backbone
-  backbone_lr_multiplier: 0.1 # Multiplier for the learning rate of the backbone
-log_every_n_steps: 10
-val_check_interval: 1.0
-precision: "16-mixed"
-gradient_clip_val: 1.0  # Gradient clipping for stability
+task: "classification"    # "classification" | "segmentation"
 
-# TensorBoard logging options
+finetuning:
+  unfreeze_at_epoch: 5
+  backbone_lr_multiplier: 0.1
+
+log_every_n_steps: 10
+val_check_interval: 1.0   # 1.0 = every epoch; 0.5 = twice per epoch
+
+# precision: "16-mixed" | "32" | "64"
+#   - "16-mixed" : FP16 mixed precision (fastest, ~2x speedup, less VRAM)
+#   - "32"       : full FP32 (most accurate, slower)
+#   - "64"       : FP64 double precision (for numerical stability research)
+precision: "32"
+
+gradient_clip_val: 1.0
+
+# ── TensorBoard ──────────────────────────────────────────────────────
 use_tensorboard: true
 tensorboard:
-  log_graph: true                  # Log model computational graph
-  log_weight_histograms: true      # Log weight/gradient histograms every N epochs
+  log_graph: true
+  log_weight_histograms: true
   histogram_every_n_epochs: 5
-  log_images: true                 # Log sample prediction images
-  log_confusion_matrix: true       # Log confusion matrix at end of each validation
-  log_pr_curve: true               # Log precision-recall curves
-  log_embedding: false             # Log embedding projections (heavy)
+  log_images: true
+  log_confusion_matrix: true
+  log_pr_curve: true
+  log_embedding: false
 use_wandb: false
 wandb_project: "bcs_determination_classification"
 
+# ── Trainer ──────────────────────────────────────────────────────────
+# accelerator: "auto" | "cpu" | "gpu" | "tpu"
+# strategy:   "auto" | "ddp" | "ddp_spawn" | "dp" | "fsdp" | "deepspeed"
 trainer:
   accelerator: "auto"
   devices: "auto"
@@ -65,12 +104,13 @@ trainer:
   profiler: null
   resume_from_checkpoint: null
 
+# ── Inference ────────────────────────────────────────────────────────
 inference:
   checkpoint_path: null
   batch_size: 64
   save_results: true
 
-# Hyperparameter optimization
+# ── Hyperparameter optimization (Optuna via Hydra) ───────────────────
 n_trials: 10
 n_epochs_per_trial: 3
 timeout: null
