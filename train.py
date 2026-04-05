@@ -31,8 +31,10 @@ import pytorch_lightning as pl
 import hydra
 from omegaconf import DictConfig
 
-from bcs_pipeline.data.stanford_bcs_datamodule import StanfordBcsDataModule
-from bcs_pipeline.lightning_module.bcs_determination_module import LitBcsDetermination
+from bcs_pipeline.data.classification_datamodule import StanfordClassificationDataModule
+from bcs_pipeline.data.segmentation_datamodule import StanfordSegmentationDataModule
+from bcs_pipeline.lightning_module.classification_module import LitClassificationModule
+from bcs_pipeline.lightning_module.segmentation_module import LitSegmentationModule
 from bcs_pipeline.trainer_factory import build_trainer, get_checkpoint_callback
 from bcs_pipeline.utils.config_utils import (
     setup_experiment_dirs,
@@ -103,38 +105,59 @@ def train(cfg: DictConfig) -> float:
 
     # ── 4. Data (stratified split + manifest) ────────────────────────
     logger.info("Setting up data module (stratified splits)…")
-    data_module = StanfordBcsDataModule(
-        data_dir=cfg.data_dir,
-        batch_size=cfg.batch_size,
-        num_workers=cfg.num_workers,
-        image_size=cfg.image_size,
-        val_split=cfg.get("val_split", 0.1),
-        test_split=cfg.get("test_split", 0.1),
-        seed=cfg.seed,
-        split_dir=str(experiment_dirs["splits"]),
-    )
+    task = cfg.get("task", "classification")
+
+    if task == "segmentation":
+        data_module = StanfordSegmentationDataModule(
+            data_dir=cfg.data_dir,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            image_size=cfg.image_size,
+            val_split=cfg.get("val_split", 0.1),
+            test_split=cfg.get("test_split", 0.1),
+            seed=cfg.seed,
+        )
+    else:
+        data_module = StanfordClassificationDataModule(
+            data_dir=cfg.data_dir,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            image_size=cfg.image_size,
+            val_split=cfg.get("val_split", 0.1),
+            test_split=cfg.get("test_split", 0.1),
+            seed=cfg.seed,
+            split_dir=str(experiment_dirs["splits"]),
+        )
     data_module.prepare_data()
     data_module.setup()
 
     # ── 5. Dataset statistics ────────────────────────────────────────
-    logger.info("Computing dataset statistics…")
-    stats = compute_all_stats(data_module)
-    display_stats_rich(stats)
-    log_stats(stats, log=logger)
-    save_stats_json(stats, experiment_dirs["stats"] / "dataset_stats.json")
+    if task == "classification":
+        logger.info("Computing dataset statistics…")
+        stats = compute_all_stats(data_module)
+        display_stats_rich(stats)
+        log_stats(stats, log=logger)
+        save_stats_json(stats, experiment_dirs["stats"] / "dataset_stats.json")
 
     # ── 6. Model ─────────────────────────────────────────────────────
     logger.info("Setting up model…")
-    model = LitBcsDetermination(
-        model_name=cfg.model_name,
-        num_classes=cfg.num_classes,
-        lr=cfg.lr,
-        optimizer_name=cfg.optimizer_name,
-        weight_decay=cfg.get("weight_decay", 1e-4),
-        scheduler_config=cfg.scheduler_config,
-        regularization=cfg.get("regularization", {}),
-        tensorboard=cfg.get("tensorboard", {}),
-    )
+    if task == "segmentation":
+        model = LitSegmentationModule(
+            model_name=cfg.model_name,
+            lr=cfg.lr,
+            num_classes=2,
+        )
+    else:
+        model = LitClassificationModule(
+            model_name=cfg.model_name,
+            num_classes=cfg.num_classes,
+            lr=cfg.lr,
+            optimizer_name=cfg.optimizer_name,
+            weight_decay=cfg.get("weight_decay", 1e-4),
+            scheduler_config=cfg.scheduler_config,
+            regularization=cfg.get("regularization", {}),
+            tensorboard=cfg.get("tensorboard", {}),
+        )
 
     # ── 7. Trainer (callbacks + loggers wired automatically) ─────────
     logger.info("Setting up trainer…")

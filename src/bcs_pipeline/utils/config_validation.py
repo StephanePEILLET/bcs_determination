@@ -57,6 +57,10 @@ class BCSConfig(BaseModel):
     )
     
     # Model configuration
+    task: Literal["classification", "segmentation"] = Field(
+        default="classification",
+        description="Task to perform (classification or segmentation)"
+    )
     model_name: Literal["resnet50", "vit"] = Field(
         default="resnet50",
         description="Name of the model architecture to use"

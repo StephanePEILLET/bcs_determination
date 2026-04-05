@@ -146,13 +146,37 @@ def build_finetuning_callback(cfg: DictConfig) -> pl.callbacks.Callback | None:
 def build_callbacks(cfg: DictConfig, checkpoint_dir: Path) -> List[pl.callbacks.Callback]:
     """Build the full list of training callbacks from the Hydra config."""
     callbacks: List[pl.callbacks.Callback] = []
+    
+    # Identify the task to determine the monitored metric
+    task = cfg.get("task", "classification")
+    if task == "segmentation":
+        monitor_metric = "val/iou"
+        mode = "max"
+        filename_pattern = "epoch={epoch:02d}-val_iou={val/iou:.2f}-{step}"
+    else:
+        monitor_metric = "val/acc"
+        mode = "max"
+        filename_pattern = "epoch={epoch:02d}-val_acc={val/acc:.2f}-{step}"
 
     # 1. Model checkpointing
-    callbacks.append(build_checkpoint_callback(checkpoint_dir=checkpoint_dir))
+    checkpoint_cb = pl.callbacks.ModelCheckpoint(
+        dirpath=checkpoint_dir,
+        filename=filename_pattern,
+        monitor=monitor_metric,
+        mode=mode,
+        save_top_k=3,
+        save_last=True,
+        verbose=True,
+    )
+    callbacks.append(checkpoint_cb)
 
     # 2. Early stopping
     if cfg.get("patience", 0) > 0:
-        callbacks.append(build_early_stopping_callback(patience=cfg.patience))
+        callbacks.append(build_early_stopping_callback(
+            monitor=monitor_metric,
+            patience=cfg.patience,
+            mode=mode
+        ))
 
     # 3. Learning-rate monitor (only useful when a logger is active)
     if cfg.get("use_tensorboard", True) or cfg.get("use_wandb", False):
@@ -164,7 +188,8 @@ def build_callbacks(cfg: DictConfig, checkpoint_dir: Path) -> List[pl.callbacks.
         callbacks.append(finetuning_cb)
 
     logger.info(
-        "Callbacks ready: %s",
+        "Callbacks ready: %s (Monitoring: %s)",
         ", ".join(type(c).__name__ for c in callbacks),
+        monitor_metric
     )
     return callbacks

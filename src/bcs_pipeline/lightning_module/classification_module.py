@@ -67,13 +67,10 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
 # ──────────────────────────────────────────────────────────────────
 # Lightning Module
 # ──────────────────────────────────────────────────────────────────
-class LitBcsDetermination(LightningModule):
+class LitClassificationModule(LightningModule):
     """
-    LightningModule for BCS Determination with:
-    - Mixup / CutMix augmentation
-    - Label smoothing
-    - Dropout & stochastic depth
-    - Comprehensive TensorBoard logging
+    Lightning module for Dog Breed Classification.
+    Features dynamic model selection, cutmix/mixup, and rich metrics tracking.
     """
 
     def __init__(
