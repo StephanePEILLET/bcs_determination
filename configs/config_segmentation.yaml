@@ -1,0 +1,105 @@
+# Configuration for Segmentation task (Oxford-IIIT Pet Dataset)
+#
+# Usage:
+#   python train.py --config-name config_segmentation
+#   python train.py --config-name config_segmentation batch_size=8 lr=0.0005
+
+defaults:
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+
+seed: 42
+
+# ── Model ────────────────────────────────────────────────────────────
+model_name: "deeplabv3_resnet50"
+
+# ── Optimizer ────────────────────────────────────────────────────────
+lr: 0.001
+optimizer_name: "adam"
+weight_decay: 1e-4
+
+# ── Scheduler ────────────────────────────────────────────────────────
+scheduler_config:
+  name: "cosine_annealing"
+  T_max: 30
+  eta_min: 1e-6
+  monitor: "val/loss"
+
+# ── Data ─────────────────────────────────────────────────────────────
+dataset: "oxford"
+data_dir: "data/Oxford-IIIT_pet_dataset"
+image_size: 256
+batch_size: 16
+num_workers: 8
+val_split: 0.1
+test_split: 0.0
+
+# ── Task ─────────────────────────────────────────────────────────────
+task: "segmentation"
+seg_num_classes: 3            # Oxford trimap: foreground / background / border
+
+# ── Training ─────────────────────────────────────────────────────────
+max_epochs: 50
+patience: 10
+
+finetuning:
+  unfreeze_at_epoch: 5
+  backbone_lr_multiplier: 0.1
+
+log_every_n_steps: 10
+val_check_interval: 1.0
+
+precision: "32"
+gradient_clip_val: 1.0
+
+# ── TensorBoard ──────────────────────────────────────────────────────
+use_tensorboard: true
+tensorboard:
+  log_graph: false
+  log_weight_histograms: true
+  histogram_every_n_epochs: 5
+  log_images: true
+  log_confusion_matrix: false
+  log_pr_curve: false
+  log_embedding: false
+use_wandb: false
+wandb_project: "bcs_determination_segmentation"
+
+# ── Trainer ──────────────────────────────────────────────────────────
+trainer:
+  accelerator: "auto"
+  devices: "auto"
+  strategy: "auto"
+  sync_batchnorm: false
+  profiler: null
+  resume_from_checkpoint: null
+
+# ── Inference ────────────────────────────────────────────────────────
+inference:
+  checkpoint_path: null
+  batch_size: 32
+  save_results: true
+
+# ── Hyperparameter optimization (Optuna via Hydra) ───────────────────
+n_trials: 10
+n_epochs_per_trial: 5
+timeout: null
+
+hydra:
+  sweeper:
+    sampler:
+      seed: ${seed}
+    direction: maximize
+    study_name: bcs_segmentation_study
+    storage: null
+    n_trials: ${n_trials}
+    n_jobs: 1
+    params:
+      lr: choice(0.0001, 0.0005, 0.001)
+      batch_size: choice(8, 16, 32)
+      weight_decay: choice(1e-4, 1e-3)
+  run:
+    dir: experiments/bcs_segmentation/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: experiments/bcs_segmentation/multirun_${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}

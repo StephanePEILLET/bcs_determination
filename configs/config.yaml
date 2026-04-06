@@ -52,6 +52,10 @@ regularization:
   stochastic_depth: 0.1   # 0.0 = disabled, typical: 0.05–0.2 (ResNet only)
 
 # ── Data ─────────────────────────────────────────────────────────────
+# dataset: "stanford" | "oxford"
+#   - "stanford" : Stanford Dogs Dataset (120 breeds, classification only)
+#   - "oxford"   : Oxford-IIIT Pet Dataset (37 breeds + trimap segmentation)
+dataset: "stanford"
 data_dir: "data/stanford_dogs"
 image_size: 224           # 224 (default) | 256 | 288 | 384 (higher = more detail but slower)
 batch_size: 32            # 16 | 32 | 64 (limited by GPU VRAM; vit <= 128)
@@ -64,6 +68,11 @@ max_epochs: 100
 patience: 15
 
 task: "classification"    # "classification" | "segmentation"
+
+# Number of segmentation classes:
+#   - Oxford trimap: 3 (foreground, background, border)
+#   - Binary pet:    2 (pet, background)
+seg_num_classes: 3
 
 finetuning:
   unfreeze_at_epoch: 5

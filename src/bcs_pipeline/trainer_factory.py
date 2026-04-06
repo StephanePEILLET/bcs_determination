@@ -52,6 +52,8 @@ def build_trainer(
     callbacks = build_callbacks(cfg, checkpoint_dir=experiment_dirs["checkpoints"])
     loggers = build_loggers(cfg, experiment_dirs)
 
+    task = cfg.get("task", "classification")
+
     trainer_kwargs = dict(
         max_epochs=cfg.max_epochs,
         accelerator=cfg.trainer.accelerator,
@@ -66,7 +68,7 @@ def build_trainer(
         gradient_clip_val=cfg.get("gradient_clip_val", None),
         enable_progress_bar=True,
         enable_model_summary=True,
-        deterministic=True,
+        deterministic="warn",
         precision=cfg.precision,
     )
 

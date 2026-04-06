@@ -61,7 +61,11 @@ class BCSConfig(BaseModel):
         default="classification",
         description="Task to perform (classification or segmentation)"
     )
-    model_name: Literal["resnet50", "vit"] = Field(
+    dataset: Literal["stanford", "oxford"] = Field(
+        default="stanford",
+        description="Dataset to use (stanford or oxford)"
+    )
+    model_name: Literal["resnet50", "vit", "deeplabv3_resnet50"] = Field(
         default="resnet50",
         description="Name of the model architecture to use"
     )
@@ -96,6 +100,11 @@ class BCSConfig(BaseModel):
         default=120,
         gt=0,
         description="Number of classes in the dataset"
+    )
+    seg_num_classes: int = Field(
+        default=3,
+        gt=0,
+        description="Number of segmentation classes (e.g. 3 for Oxford trimap)"
     )
     batch_size: int = Field(
         default=64,

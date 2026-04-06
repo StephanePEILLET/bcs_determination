@@ -31,8 +31,10 @@ import pytorch_lightning as pl
 import hydra
 from omegaconf import DictConfig
 
-from bcs_pipeline.data.classification_datamodule import StanfordClassificationDataModule
-from bcs_pipeline.data.segmentation_datamodule import StanfordSegmentationDataModule
+from bcs_pipeline.data.stanford_classification_datamodule import StanfordClassificationDataModule
+from bcs_pipeline.data.stanford_segmentation_datamodule import StanfordSegmentationDataModule
+from bcs_pipeline.data.oxford_classification_datamodule import OxfordClassificationDataModule
+from bcs_pipeline.data.oxford_segmentation_datamodule import OxfordSegmentationDataModule
 from bcs_pipeline.lightning_module.classification_module import LitClassificationModule
 from bcs_pipeline.lightning_module.segmentation_module import LitSegmentationModule
 from bcs_pipeline.trainer_factory import build_trainer, get_checkpoint_callback
@@ -106,28 +108,50 @@ def train(cfg: DictConfig) -> float:
     # ── 4. Data (stratified split + manifest) ────────────────────────
     logger.info("Setting up data module (stratified splits)…")
     task = cfg.get("task", "classification")
+    dataset = cfg.get("dataset", "stanford")
+    seg_num_classes = cfg.get("seg_num_classes", 3)
 
     if task == "segmentation":
-        data_module = StanfordSegmentationDataModule(
-            data_dir=cfg.data_dir,
-            batch_size=cfg.batch_size,
-            num_workers=cfg.num_workers,
-            image_size=cfg.image_size,
-            val_split=cfg.get("val_split", 0.1),
-            test_split=cfg.get("test_split", 0.1),
-            seed=cfg.seed,
-        )
+        if dataset == "oxford":
+            data_module = OxfordSegmentationDataModule(
+                data_dir=cfg.data_dir,
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                image_size=cfg.image_size,
+                val_split=cfg.get("val_split", 0.1),
+                seed=cfg.seed,
+            )
+        else:
+            data_module = StanfordSegmentationDataModule(
+                data_dir=cfg.data_dir,
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                image_size=cfg.image_size,
+                val_split=cfg.get("val_split", 0.1),
+                test_split=cfg.get("test_split", 0.1),
+                seed=cfg.seed,
+            )
     else:
-        data_module = StanfordClassificationDataModule(
-            data_dir=cfg.data_dir,
-            batch_size=cfg.batch_size,
-            num_workers=cfg.num_workers,
-            image_size=cfg.image_size,
-            val_split=cfg.get("val_split", 0.1),
-            test_split=cfg.get("test_split", 0.1),
-            seed=cfg.seed,
-            split_dir=str(experiment_dirs["splits"]),
-        )
+        if dataset == "oxford":
+            data_module = OxfordClassificationDataModule(
+                data_dir=cfg.data_dir,
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                image_size=cfg.image_size,
+                val_split=cfg.get("val_split", 0.1),
+                seed=cfg.seed,
+            )
+        else:
+            data_module = StanfordClassificationDataModule(
+                data_dir=cfg.data_dir,
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                image_size=cfg.image_size,
+                val_split=cfg.get("val_split", 0.1),
+                test_split=cfg.get("test_split", 0.1),
+                seed=cfg.seed,
+                split_dir=str(experiment_dirs["splits"]),
+            )
     data_module.prepare_data()
     data_module.setup()
 
@@ -145,7 +169,8 @@ def train(cfg: DictConfig) -> float:
         model = LitSegmentationModule(
             model_name=cfg.model_name,
             lr=cfg.lr,
-            num_classes=2,
+            num_classes=seg_num_classes,
+            tensorboard=cfg.get("tensorboard", {}),
         )
     else:
         model = LitClassificationModule(
