@@ -1,4 +1,0 @@
-- trainer.accelerator=cpu
-- trainer.devices=1
-- max_epochs=1
-- use_tensorboard=false
