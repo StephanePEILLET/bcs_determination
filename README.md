@@ -1,4 +1,4 @@
-# BCS Determination Classification
+# Body Condition Score (BCS) Determination
 
 Deep-learning pipeline for classifying **120 dog breeds** from the
 [Stanford Dogs Dataset](http://vision.stanford.edu/aditya86/ImageNetDogs/)
