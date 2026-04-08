@@ -126,9 +126,9 @@ class BCSConfig(BaseModel):
     )
     test_split: float = Field(
         default=0.1,
-        gt=0.0,
+        ge=0.0,
         lt=1.0,
-        description="Fraction of data for test (stratified)"
+        description="Fraction of data for test (stratified). 0.0 = no test split."
     )
     
     # Training parameters

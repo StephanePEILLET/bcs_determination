@@ -81,7 +81,7 @@ class OxfordSegmentationDataset(Dataset):
         if self.transform:
             img = self.transform(img)
         if self.mask_transform:
-            mask = self.mask_transform(mask)
+            mask = self.mask_transform(mask).squeeze(0).long()
         else:
             mask = TF.pil_to_tensor(mask).squeeze(0).long()
 
@@ -115,11 +115,7 @@ class _SegSubset(Dataset):
             torch.manual_seed(seed)
             img = self.transform(img)
             torch.manual_seed(seed)
-            mask = self.mask_transform(mask)
-        else:
-            if self.transform:
-                img = self.transform(img)
-            mask = TF.pil_to_tensor(mask).squeeze(0).long()
+            mask = self.mask_transform(mask).squeeze(0).long()
 
         return img, mask
 
