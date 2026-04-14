@@ -1,9 +1,72 @@
 # Body Condition Score (BCS) Determination
 
-Deep-learning pipeline for classifying **120 dog breeds** from the
-[Stanford Dogs Dataset](http://vision.stanford.edu/aditya86/ImageNetDogs/)
-using **PyTorch Lightning**, **Hydra**, **TensorBoard** and optionally
-**Weights & Biases**.
+> **Estimation automatique du Body Condition Score (BCS) d'un chien à partir d'une image, en combinant classification de race, segmentation sémantique et détection de pose.**
+
+## Contexte
+
+Le **Body Condition Score** est un indicateur clinique (échelle 1–9) utilisé par les vétérinaires pour évaluer l'état corporel d'un animal (embonpoint, idéal, maigreur). Cette estimation repose today'hui sur une palpation manuelle et une évaluation visuelle subjective. Ce projet explore une approche **entièrement visuelle et automatisée** basée sur le deep learning.
+
+## Approche
+
+Le BCS d'un chien dépend fortement de sa **race** (un Greyhound et un Bulldog n'ont pas la même morphologie), de la **forme de son silhouette** (répartition graisse/muscle visible depuis le dessus et le côté), et de sa **posture**. Le pipeline combine trois piliers complémentaires :
+
+### 1. Classification de race (120 races — Stanford Dogs)
+
+Identifier la race permet d'ajuster les attentes morphologiques : un Whippet naturellement mince ne doit pas être jugé comme un Labrador en sous-poids.
+
+- **ResNet-50** (ImageNet pretrained, fine-tuned) — val_acc = 0.79
+- **ViT-B/16** (google/vit-base-patch16-224-in21k, fine-tuned) — val_acc = 0.87
+
+| Modèle | Backbone | Top-1 | Top-5 | Paramètres |
+|---|---|---|---|---|
+| ResNet-50 | CNN (23M) | 79% | — | 23,7M |
+| ViT-B/16 | Transformer (86M) | 87% | — | 86M |
+
+### 2. Segmentation sémantique (Oxford-IIIT Pet)
+
+Isoler le contour du chien dans l'image permet d'analyser sa **silhouette** : un chien en surpoids présentera un contour plus large au niveau des côtes et de la taille, sans taille marquée vue de dessus.
+
+- **DeepLabV3-ResNet50** (COCO pretrained, fine-tuned) — val_IoU = 0.82
+- 3 classes trimap : *foreground (animal)*, *background*, *border (contour)*
+- Métriques : Pixel Accuracy = 93.7%, mIoU = 0.82, mDice = 0.89
+
+### 3. Détection de pose (OpenPose)
+
+Repérer les **points clés anatomiques** (colonne vertébrale, hanches, côtes, queue) permet de mesurer des rapports de proportions corporelles utilisés dans les grilles BCS vétérinaires (ex. visibilité des côtes, présence d'une taille vue de dessus, épaisseur de la base de la queue).
+
+- Protocole OpenPose (COCO + MPII) via les modèles pré-entraînés
+- Extraction de keypoints et calcul de features géométriques
+
+### 4. Vision classique (baseline sans deep learning)
+
+Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Laplacien, Prewitt) servent de baseline pour comparer l'apport du deep learning sur l'extraction de silhouette :
+
+- OpenCV : Canny multi-seuils, Sobel, Laplacien
+- scikit-image : Canny multi-scale, Prewitt, Roberts, Scharr
+- Kornia (GPU, différentiable) : Sobel, Canny, Laplacian
+
+## Stack technique
+
+| Composant | Technologie |
+|---|---|
+| Framework DL | PyTorch + PyTorch Lightning |
+| Hyperparamètres | Hydra + Optuna |
+| Logging | TensorBoard (+ W&B optionnel) |
+| Modèles | torchvision (ResNet, DeepLabV3), HuggingFace Transformers (ViT) |
+| Serveur d'inférence | FastAPI |
+| Container | Docker |
+
+## Notebooks d'évaluation
+
+| Notebook | Description |
+|---|---|
+| `test_models_reddit_edge_detection.ipynb` | **Vue d'ensemble** : les 3 modèles sur images Reddit + contours classiques |
+| `evaluate_vit_classification_Stanford_Dogs.ipynb` | Évaluation complète ViT (courbes, matrice de confusion, confiance, Reddit) |
+| `visualize_results_Race_Classif_Stanford_Dogs.ipynb` | Évaluation ResNet-50 (t-SNE, calibration, rapports par classe) |
+| `evaluate_segmentation_oxford_pet.ipynb` | Évaluation DeepLabV3 (IoU/Dice, overlays, Reddit) |
+| `edge_detection.ipynb` | Comparaison exhaustive de contours (skimage, Kornia, OpenCV) |
+| `unsupervised_segmentation.ipynb` | Baselines de segmentation non supervisée |
+| `pose_detection.ipynb` | Détection de pose avec OpenPose |
 
 ---
 
@@ -13,45 +76,63 @@ using **PyTorch Lightning**, **Hydra**, **TensorBoard** and optionally
 2. [Setup & Installation](#setup--installation)
 3. [Training](#training)
 4. [Inference](#inference)
-5. [Visualization](#visualization)
+5. [Evaluation Notebooks](#evaluation-notebooks)
 6. [Architecture & Module Reference](#architecture--module-reference)
 7. [Deployment](#deployment)
 8. [Configuration Reference](#configuration-reference)
-
----
 
 ## Project Structure
 
 ```
 bcs_determination/
 ├── configs/
-│   └── config.yaml               # Hydra configuration (hyperparams, paths, …)
+│   ├── config.yaml                        # Classification Hydra config
+│   └── config_segmentation.yaml           # Segmentation Hydra config
 ├── src/
-│   └── bcs_pipeline/             # Main Python package
+│   └── bcs_pipeline/                      # Main Python package
 │       ├── __init__.py
-│       ├── callbacks.py          # Callback factories (checkpoint, early stop, LR)
-│       ├── loggers.py            # Logger factories (TensorBoard, W&B)
-│       ├── trainer_factory.py    # High-level Trainer builder
-│       ├── inference/            # Shared inference utilities
-│       │   └── __init__.py       #   load_model, predict_single, predict_batch
+│       ├── callbacks.py                   # Callback factories
+│       ├── loggers.py                     # Logger factories (TensorBoard, W&B)
+│       ├── trainer_factory.py             # High-level Trainer builder
+│       ├── inference/                     # Shared inference utilities
+│       │   └── __init__.py
 │       ├── data/
-│       │   └── stanford_bcs_datamodule.py   # LightningDataModule
+│       │   ├── stanford_classification_datamodule.py
+│       │   ├── stanford_segmentation_datamodule.py
+│       │   ├── oxford_classification_datamodule.py
+│       │   └── oxford_segmentation_datamodule.py
 │       ├── lightning_module/
-│       │   └── bcs_determination_module.py  # LightningModule (training logic)
+│       │   ├── classification_module.py   # LitClassificationModule
+│       │   └── segmentation_module.py     # LitSegmentationModule
 │       ├── models/
-│       │   ├── resnet_transfer.py           # ResNet-50 transfer backbone
-│       │   └── vit_transfer.py              # ViT transfer backbone
+│       │   ├── resnet_transfer.py         # ResNet-50 transfer backbone
+│       │   └── vit_transfer.py            # ViT-B/16 transfer backbone
 │       └── utils/
-│           ├── config_utils.py              # Experiment dirs, config helpers
-│           ├── config_validation.py         # Pydantic-based validation
-│           └── logging_utils.py             # Rich logging setup
-├── experiments/              # Auto-generated experiment outputs
-├── train.py                  # Training entry-point (lightweight orchestrator)
-├── inference.py              # CLI for single-image prediction
-├── app.py                    # FastAPI server
-├── environment.yaml          # Conda environment spec
-├── Dockerfile                # Production container
-├── visualize_results.ipynb   # Visual inference notebook
+│           ├── config_utils.py
+│           ├── config_validation.py
+│           └── logging_utils.py
+├── notebooks/
+│   ├── evaluate_vit_classification_Stanford_Dogs.ipynb
+│   ├── visualize_results_Race_Classif_Stanford_Dogs.ipynb
+│   ├── evaluate_segmentation_oxford_pet.ipynb
+│   ├── test_models_reddit_edge_detection.ipynb
+│   ├── edge_detection.ipynb
+│   ├── unsupervised_segmentation.ipynb
+│   └── pose_detection.ipynb
+├── data/
+│   ├── Stanford_dogs/                     # 120 breed folders
+│   ├── Oxford-IIIT_pet_dataset/           # Pet images + trimaps
+│   └── Reddit_example/                    # 2 out-of-distribution webp images
+├── experiments/                           # Auto-generated (checkpoints, TB logs, splits)
+│   ├── resnet50_adam_cosine_annealing/
+│   ├── vit_adam_cosine_annealing/
+│   └── deeplabv3_resnet50_adam_cosine_annealing/
+├── models/pose/                           # OpenPose prototxt
+├── train.py                               # Training entry-point
+├── inference.py                           # CLI inference
+├── app.py                                 # FastAPI server
+├── environment.yaml
+├── Dockerfile
 └── README.md
 ```
 
@@ -88,11 +169,13 @@ python -c "from torch.utils.tensorboard import SummaryWriter; print('TensorBoard
 
 ### 3. Data preparation
 
+**Classification (Stanford Dogs)**
+
 Download the Stanford Dogs Dataset and extract it so the directory tree looks
 like:
 
 ```
-data/stanford_dogs/
+data/Stanford_dogs/
 └── Images/
     ├── n02085620-Chihuahua/
     ├── n02085782-Japanese_spaniel/
@@ -100,7 +183,20 @@ data/stanford_dogs/
 ```
 
 > **Tip:** If you point `data_dir` to the correct location the
-> `StanfordBcsDataModule` will auto-download and extract the dataset for you.
+> `StanfordClassificationDataModule` will auto-download and extract the dataset.
+
+**Segmentation (Oxford-IIIT Pet)**
+
+```
+data/Oxford-IIIT_pet_dataset/
+├── images/
+│   ├── Abyssinian_1.jpg
+│   └── ...
+└── annotations/
+    └── trimaps/
+        ├── Abyssinian_1.png
+        └── ...
+```
 
 ---
 
@@ -109,18 +205,26 @@ data/stanford_dogs/
 Training is managed via [Hydra](https://hydra.cc/).  You can modify
 `configs/config.yaml` **or** override values from the CLI.
 
+### Classification (Stanford Dogs)
+
 ```bash
-# Default config
+# Default config (ViT)
 python train.py
 
-# Override hyperparameters
-python train.py data_dir=/data/stanford_dogs batch_size=64 max_epochs=50
+# ResNet-50
+python train.py model_name=resnet50
 
-# Use GPU with mixed precision
-python train.py trainer.accelerator=gpu precision=16-mixed
+# Override hyperparameters
+python train.py data_dir=data/Stanford_dogs batch_size=64 max_epochs=50
 
 # Resume from a checkpoint
 python train.py trainer.resume_from_checkpoint=experiments/.../checkpoints/last.ckpt
+```
+
+### Segmentation (Oxford-IIIT Pet)
+
+```bash
+python train.py --config-name config_segmentation
 ```
 
 ### Hyperparameter sweep (Optuna)
@@ -169,17 +273,15 @@ print(result)
 
 ---
 
-## Visualization
+## Evaluation Notebooks
 
-A Jupyter Notebook `visualize_results.ipynb` lets you visually inspect
-predictions on sample images.
+All notebooks are in the `notebooks/` directory.  Use the `bcs_analysis` kernel.
+
+*(See the table in the [intro](#notebooks-dévaluation) for a full description.)*
 
 ```bash
-jupyter notebook visualize_results.ipynb
+jupyter notebook notebooks/
 ```
-
-Set `CHECKPOINT_PATH` and `DATA_DIR` at the top of the notebook, then run all
-cells to see predicted breeds overlaid on the actual images.
 
 ---
 
@@ -190,8 +292,8 @@ cells to see predicted breeds overlaid on the actual images.
 Lightweight Hydra-decorated entry-point.  Steps:
 1. Validate config → `bcs_pipeline.utils.config_utils.validate_config`
 2. Setup experiment dirs → `bcs_pipeline.utils.config_utils.setup_experiment_dirs`
-3. Build data module → `bcs_pipeline.data.StanfordBcsDataModule`
-4. Build model → `bcs_pipeline.lightning_module.LitBcsDetermination`
+3. Build data module → `bcs_pipeline.data.StanfordClassificationDataModule` or `OxfordSegmentationDataModule`
+4. Build model → `bcs_pipeline.lightning_module.LitClassificationModule` or `LitSegmentationModule`
 5. Build trainer (callbacks + loggers) → `bcs_pipeline.trainer_factory.build_trainer`
 6. `trainer.fit()` then `trainer.test()`
 
@@ -229,7 +331,7 @@ Lightweight Hydra-decorated entry-point.  Steps:
 | `predict_single(model, image)` | Predict on one PIL image (top-k) |
 | `predict_batch(model, batch)` | Predict on a pre-processed tensor batch |
 
-### `bcs_pipeline.lightning_module.LitBcsDetermination`
+### `bcs_pipeline.lightning_module.LitClassificationModule`
 
 Full-featured `LightningModule` with:
 - **Mixup / CutMix** augmentation (configurable via `regularization.*`)
@@ -238,12 +340,19 @@ Full-featured `LightningModule` with:
 - Comprehensive TensorBoard logging: images, confusion matrix, PR curves,
   weight histograms
 
-### `bcs_pipeline.data.StanfordBcsDataModule`
+### `bcs_pipeline.lightning_module.LitSegmentationModule`
 
-- Auto-downloads the Stanford Dogs tar archive
-- Applies `RandAugment` + ImageNet normalisation for training
-- Deterministic resize/crop for validation and test splits
-- Reproducible `random_split()` seeded by `cfg.seed`
+Segmentation `LightningModule` (DeepLabV3-ResNet50) with:
+- Combined **Cross-Entropy + Dice** loss
+- Per-class **IoU, Dice, Pixel Accuracy** metrics
+- TensorBoard overlay visualisations
+
+### `bcs_pipeline.data`
+
+| Class | Description |
+|---|---|
+| `StanfordClassificationDataModule` | Stanford Dogs classification with stratified splits, RandAugment |
+| `OxfordSegmentationDataModule` | Oxford-IIIT Pet segmentation with trimap masks |
 
 ### `bcs_pipeline.models`
 
@@ -278,24 +387,34 @@ docker run -p 8000:8000 bcs_determination_api
 All values below can be overridden from the CLI
 (`python train.py key=value`).
 
+### Classification (`configs/config.yaml`)
+
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `seed` | int | 42 | Global random seed |
-| `model_name` | str | `resnet50` | `resnet50` or `vit` |
+| `model_name` | str | `vit` | `resnet50` or `vit` |
 | `num_classes` | int | 120 | Number of output classes |
 | `lr` | float | 0.001 | Learning rate |
 | `optimizer_name` | str | `adam` | `adam` or `sgd` |
 | `weight_decay` | float | 1e-4 | Weight decay |
 | `batch_size` | int | 32 | Mini-batch size |
-| `max_epochs` | int | 20 | Max training epochs |
-| `patience` | int | 5 | Early-stopping patience |
-| `precision` | str | `16-mixed` | Training precision (`16-mixed`, `32`, `64`) |
-| `use_tensorboard` | bool | true | Enable TensorBoard |
-| `use_wandb` | bool | false | Enable W&B |
-| `trainer.accelerator` | str | `auto` | `auto`, `cpu`, `gpu`, `tpu` |
-| `trainer.devices` | str/int | `auto` | Number of devices |
+| `max_epochs` | int | 100 | Max training epochs |
+| `patience` | int | 15 | Early-stopping patience |
+| `precision` | str | `32` | Training precision (`16-mixed`, `32`, `64`) |
+| `image_size` | int | 224 | Input image size |
+| `dataset` | str | `stanford` | `stanford` or `oxford` |
 | `regularization.dropout` | float | 0.3 | Dropout rate |
 | `regularization.label_smoothing` | float | 0.1 | Label smoothing ε |
 | `regularization.mixup_alpha` | float | 0.2 | Mixup alpha (0 to disable) |
 | `regularization.cutmix_alpha` | float | 1.0 | CutMix alpha (0 to disable) |
 | `regularization.stochastic_depth` | float | 0.1 | Drop-path rate |
+
+### Segmentation (`configs/config_segmentation.yaml`)
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model_name` | str | `deeplabv3_resnet50` | Segmentation backbone |
+| `seg_num_classes` | int | 3 | Trimap classes (foreground/background/border) |
+| `image_size` | int | 256 | Input resolution |
+| `batch_size` | int | 16 | Mini-batch size |
+| `max_epochs` | int | 50 | Max training epochs |
