@@ -60,10 +60,11 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 
 | Notebook | Description |
 |---|---|
-| `test_models_reddit_edge_detection.ipynb` | **Vue d'ensemble** : les 3 modèles sur images Reddit + contours classiques |
+| `reddit_images_tests_models.ipynb` | **Vue d'ensemble** : les 3 modèles sur images Reddit + contours classiques |
 | `evaluate_vit_classification_Stanford_Dogs.ipynb` | Évaluation complète ViT (courbes, matrice de confusion, confiance, Reddit) |
 | `visualize_results_Race_Classif_Stanford_Dogs.ipynb` | Évaluation ResNet-50 (t-SNE, calibration, rapports par classe) |
 | `evaluate_segmentation_oxford_pet.ipynb` | Évaluation DeepLabV3 (IoU/Dice, overlays, Reddit) |
+| `sam2_comparison.ipynb` | Comparaison SAM2 vs DeepLabV3 pour la segmentation |
 | `edge_detection.ipynb` | Comparaison exhaustive de contours (skimage, Kornia, OpenCV) |
 | `unsupervised_segmentation.ipynb` | Baselines de segmentation non supervisée |
 | `pose_detection.ipynb` | Détection de pose avec OpenPose |
@@ -110,12 +111,14 @@ bcs_determination/
 │       └── utils/
 │           ├── config_utils.py
 │           ├── config_validation.py
+│           ├── dataset_stats.py
 │           └── logging_utils.py
 ├── notebooks/
 │   ├── evaluate_vit_classification_Stanford_Dogs.ipynb
 │   ├── visualize_results_Race_Classif_Stanford_Dogs.ipynb
 │   ├── evaluate_segmentation_oxford_pet.ipynb
-│   ├── test_models_reddit_edge_detection.ipynb
+│   ├── reddit_images_tests_models.ipynb
+│   ├── sam2_comparison.ipynb
 │   ├── edge_detection.ipynb
 │   ├── unsupervised_segmentation.ipynb
 │   └── pose_detection.ipynb
@@ -292,7 +295,7 @@ jupyter notebook notebooks/
 Lightweight Hydra-decorated entry-point.  Steps:
 1. Validate config → `bcs_pipeline.utils.config_utils.validate_config`
 2. Setup experiment dirs → `bcs_pipeline.utils.config_utils.setup_experiment_dirs`
-3. Build data module → `bcs_pipeline.data.StanfordClassificationDataModule` or `OxfordSegmentationDataModule`
+3. Build data module → `bcs_pipeline.data.*DataModule` (Stanford/Oxford × Classification/Segmentation)
 4. Build model → `bcs_pipeline.lightning_module.LitClassificationModule` or `LitSegmentationModule`
 5. Build trainer (callbacks + loggers) → `bcs_pipeline.trainer_factory.build_trainer`
 6. `trainer.fit()` then `trainer.test()`
@@ -352,6 +355,8 @@ Segmentation `LightningModule` (DeepLabV3-ResNet50) with:
 | Class | Description |
 |---|---|
 | `StanfordClassificationDataModule` | Stanford Dogs classification with stratified splits, RandAugment |
+| `StanfordSegmentationDataModule` | Stanford Dogs segmentation |
+| `OxfordClassificationDataModule` | Oxford-IIIT Pet classification |
 | `OxfordSegmentationDataModule` | Oxford-IIIT Pet segmentation with trimap masks |
 
 ### `bcs_pipeline.models`
@@ -360,6 +365,15 @@ Segmentation `LightningModule` (DeepLabV3-ResNet50) with:
 |---|---|
 | `ResNetTransfer` | ResNet-50 (ImageNet weights) + dropout + optional stochastic depth |
 | `ViTTransfer` | HuggingFace `vit-base-patch16-224-in21k` fine-tuning wrapper |
+
+### `bcs_pipeline.utils`
+
+| Module | Description |
+|---|---|
+| `config_utils` | Experiment dir setup, config validation, config snapshot save |
+| `config_validation` | Hydra config schema validation |
+| `dataset_stats` | Per-class dataset statistics (compute, display, log, save as JSON) |
+| `logging_utils` | Logging setup, Rich config printing, experiment info logging |
 
 ---
 
@@ -403,6 +417,9 @@ All values below can be overridden from the CLI
 | `precision` | str | `32` | Training precision (`16-mixed`, `32`, `64`) |
 | `image_size` | int | 224 | Input image size |
 | `dataset` | str | `stanford` | `stanford` or `oxford` |
+| `task` | str | `classification` | `classification` or `segmentation` |
+| `val_split` | float | 0.1 | Validation split ratio |
+| `test_split` | float | 0.1 | Test split ratio |
 | `regularization.dropout` | float | 0.3 | Dropout rate |
 | `regularization.label_smoothing` | float | 0.1 | Label smoothing ε |
 | `regularization.mixup_alpha` | float | 0.2 | Mixup alpha (0 to disable) |
@@ -414,7 +431,10 @@ All values below can be overridden from the CLI
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `model_name` | str | `deeplabv3_resnet50` | Segmentation backbone |
+| `task` | str | `segmentation` | Task type |
+| `dataset` | str | `oxford` | Dataset name |
 | `seg_num_classes` | int | 3 | Trimap classes (foreground/background/border) |
 | `image_size` | int | 256 | Input resolution |
 | `batch_size` | int | 16 | Mini-batch size |
 | `max_epochs` | int | 50 | Max training epochs |
+| `patience` | int | 10 | Early-stopping patience |
