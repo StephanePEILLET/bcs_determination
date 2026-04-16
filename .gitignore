@@ -45,3 +45,5 @@ output.log
 Thumbs.db
 .kilo/
 data
+notebooks/datasets/*
+notebooks/runs/
