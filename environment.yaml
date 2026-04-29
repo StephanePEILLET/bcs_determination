@@ -31,5 +31,6 @@ dependencies:
     - hydra-optuna-sweeper>=1.2.0
     - fastapi>=0.100.0
     - uvicorn>=0.22.0
+    - flask>=3.0.0
     - prodict>=0.8.0
     - python-multipart>=0.0.6

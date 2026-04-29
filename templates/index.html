@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Body Pawsitive</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f0f2f5; color: #1a1a2e; min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff; padding: 18px 32px; display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 22px; font-weight: 600; }
+  header p { font-size: 13px; opacity: 0.75; }
+  .container { max-width: 1340px; margin: 0 auto; padding: 24px; }
+
+  .source-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; }
+  .tab-bar { display: flex; border-bottom: 1px solid #e5e7eb; }
+  .tab-btn {
+    flex: 1; padding: 10px 16px; font-size: 13px; font-weight: 600;
+    text-align: center; background: #f8fafc; border: none; cursor: pointer; color: #6b7280;
+    transition: color .15s, background .15s;
+  }
+  .tab-btn.active { color: #1a1a2e; background: #fff; box-shadow: inset 0 -2px 0 #3b82f6; }
+  .tab-btn:hover:not(.active) { background: #f1f5f9; }
+  .tab-panel { display: none; padding: 16px 20px; }
+  .tab-panel.active { display: block; }
+
+  .controls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .field label {
+    display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: #555; margin-bottom: 4px;
+  }
+  .field select {
+    width: 100%; padding: 7px 8px; border: 1px solid #d1d5db; border-radius: 6px;
+    font-size: 13px; background: #fafafa; cursor: pointer;
+  }
+  .field select:focus { outline: none; border-color: #3b82f6; }
+
+  .drop-zone {
+    border: 2px dashed #cbd5e1; border-radius: 8px; padding: 32px 16px;
+    text-align: center; color: #6b7280; cursor: pointer; position: relative;
+    transition: border-color .15s, background .15s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; color: #3b82f6; }
+  .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop-zone .dz-text { font-size: 14px; }
+  .drop-zone .dz-hint { font-size: 12px; margin-top: 6px; opacity: .7; }
+  .drop-zone .dz-preview { max-height: 120px; margin-top: 10px; border-radius: 4px; }
+
+  .action-bar {
+    margin-top: 16px; background: #fff; border-radius: 10px; padding: 12px 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-wrap: wrap;
+    gap: 12px; align-items: center;
+  }
+  .action-bar .label-sm {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #555;
+  }
+  .toggle { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; user-select: none; }
+  .toggle input[type="checkbox"] { width: 15px; height: 15px; accent-color: #3b82f6; cursor: pointer; }
+  .toggle .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid rgba(0,0,0,.12); }
+  .spacer { flex: 1; }
+  .btn {
+    padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap;
+  }
+  #btn-run { background: #3b82f6; color: #fff; }
+  #btn-run:hover { background: #2563eb; }
+  #btn-run:disabled { background: #93c5fd; cursor: not-allowed; }
+  .btn-export { background: #f8fafc; color: #374151; border: 1px solid #d1d5db; display: none; }
+  .btn-export:hover { background: #f1f5f9; }
+
+  .tool-btn {
+    padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;
+    font-weight: 600; cursor: pointer; background: #f8fafc; color: #374151;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .tool-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  .tool-btn:hover:not(.active) { background: #e2e8f0; }
+
+  .results { margin-top: 24px; display: none; }
+  .results.active { display: block; }
+  .images-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .img-card { background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .img-card .card-header {
+    padding: 10px 16px; font-size: 13px; font-weight: 600; background: #f8fafc;
+    border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;
+  }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #e0e7ff; color: #3730a3; }
+
+  .source-img-wrap img { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; background: #000; }
+
+  .canvas-wrap {
+    position: relative; background: #000; overflow: hidden;
+  }
+  .canvas-wrap canvas { display: block; }
+
+  .comment-popup {
+    position: absolute; display: none; z-index: 20;
+    transform: translate(8px, -50%);
+  }
+  .comment-popup input {
+    padding: 5px 8px; border: 2px solid #3b82f6; border-radius: 6px;
+    font-size: 13px; width: 200px; outline: none; background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+
+  .breed-label {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff; padding: 10px 16px; font-size: 15px; font-weight: 600;
+    display: flex; justify-content: center; align-items: center; gap: 10px;
+  }
+  .breed-label .breed-name { font-size: 18px; }
+  .breed-label .breed-conf { font-size: 13px; opacity: .8; font-weight: 400; }
+  .breed-label .label-tag { font-size: 11px; opacity: .6; margin-right: 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+  .observations { background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .observations h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+  .obs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .obs-section { font-size: 14px; }
+  .obs-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: #6b7280; margin-bottom: 8px; }
+  .obs-section ul { list-style: none; }
+  .obs-section li { padding: 3px 0; display: flex; justify-content: space-between; }
+  .obs-section li .bar { display: block; height: 6px; border-radius: 3px; margin-top: 4px; }
+  .obs-section .stat { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .obs-section .stat .bar { display: inline-block; height: 8px; border-radius: 4px; }
+
+  .spinner { display: none; text-align: center; padding: 60px 0; color: #6b7280; font-size: 15px; }
+  .spinner.active { display: block; }
+  .spinner::before {
+    content: ""; display: inline-block; width: 32px; height: 32px;
+    border: 3px solid #d1d5db; border-top-color: #3b82f6;
+    border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-msg { display: none; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; padding: 14px 18px; margin-top: 16px; font-size: 14px; }
+  .error-msg.active { display: block; }
+
+  .hint-bar {
+    margin-top: 8px; padding: 8px 14px; background: #eff6ff; border-radius: 6px;
+    font-size: 12px; color: #3730a3; display: none;
+  }
+  .hint-bar.active { display: block; }
+
+  @media (max-width: 768px) {
+    .images-row { grid-template-columns: 1fr; }
+    .controls-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Body Pawsitive</h1>
+    <p>Classification de race &middot; Segmentation (DeepLabV3 / SAM 2) &middot; D&eacute;tection de pose</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="source-card">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="tab-dataset">Dataset</button>
+      <button class="tab-btn" data-tab="tab-upload">Importer une image</button>
+    </div>
+    <div class="tab-panel active" id="tab-dataset">
+      <div class="controls-grid">
+        <div class="field"><label>Dataset</label><select id="sel-dataset"><option value="">Chargement&hellip;</option></select></div>
+        <div class="field"><label>Race / Groupe</label><select id="sel-group" disabled><option value="">&mdash;</option></select></div>
+        <div class="field"><label>Image</label><select id="sel-image" disabled><option value="">&mdash;</option></select></div>
+        <div class="field">
+          <label>Segmentation</label>
+          <select id="sel-backend"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
+        </div>
+        <div class="field">
+          <label>SAM 2 mode</label>
+          <select id="sel-sam2-mode"><option value="prompted">prompted (centre)</option><option value="automatic">automatic (grille)</option><option value="pose_prompted" selected>pose_prompted</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-upload">
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept="image/*">
+        <div class="dz-text" id="dz-text">Glisser-d&eacute;poser une image ici ou cliquer pour parcourir</div>
+        <div class="dz-hint">JPG, PNG, WebP</div>
+        <img class="dz-preview" id="dz-preview" style="display:none;" alt="">
+      </div>
+      <div class="controls-grid" style="margin-top:12px;">
+        <div class="field">
+          <label>Segmentation</label>
+          <select id="sel-backend-up"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
+        </div>
+        <div class="field">
+          <label>SAM 2 mode</label>
+          <select id="sel-sam2-up"><option value="prompted">prompted (centre)</option><option value="automatic">automatic (grille)</option><option value="pose_prompted" selected>pose_prompted</option></select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="action-bar" id="action-bar">
+    <span class="label-sm">Outil</span>
+    <button class="tool-btn active" id="tool-move" data-tool="move">&#9995;&ensp;D&eacute;placer</button>
+    <button class="tool-btn" id="tool-comment" data-tool="comment">&#128172;&ensp;Commentaire</button>
+    <span style="width:1px;height:24px;background:#e5e7eb;"></span>
+    <span class="label-sm">Couches</span>
+    <label class="toggle"><input type="checkbox" id="chk-seg" checked><span class="swatch" style="background:#00c800;"></span>Segmentation</label>
+    <label class="toggle"><input type="checkbox" id="chk-boxes" checked><span class="swatch" style="background:#32ff32;"></span>Boxes</label>
+    <label class="toggle"><input type="checkbox" id="chk-keypoints" checked><span class="swatch" style="background:#ff00ff;"></span>Keypoints</label>
+    <span class="spacer"></span>
+    <button class="btn btn-export" id="btn-export-png" title="T&eacute;l&eacute;charger l'overlay en PNG">&#11015;&#xFE0E; PNG</button>
+    <button class="btn btn-export" id="btn-export-json" title="Exporter les annotations en JSON">&#11015;&#xFE0E; JSON</button>
+    <button class="btn" id="btn-run">&#9654;&ensp;Lancer l'inf&eacute;rence</button>
+  </div>
+
+  <div class="spinner" id="spinner">Inf&eacute;rence en cours&hellip;</div>
+  <div class="error-msg" id="error-msg"></div>
+
+  <div class="results" id="results">
+    <div class="images-row">
+      <div class="img-card">
+        <div class="card-header">Source</div>
+        <div class="source-img-wrap"><img id="img-source" src="" alt="Source"></div>
+        <div class="breed-label" id="source-breed" style="display:none;">
+          <span class="label-tag">V&eacute;rit&eacute; terrain</span>
+          <span class="breed-name" id="gt-name">&mdash;</span>
+        </div>
+      </div>
+      <div class="img-card">
+        <div class="card-header">
+          <span>Overlay &mdash; &eacute;dition interactive</span>
+          <span class="badge" id="overlay-badge">&mdash;</span>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <canvas id="editor-canvas"></canvas>
+          <div class="comment-popup" id="comment-popup">
+            <input type="text" id="comment-input" placeholder="Votre commentaire&hellip;">
+          </div>
+        </div>
+        <div class="hint-bar" id="hint-bar">
+          Cliquer/glisser les keypoints et les coins des boxes pour les d&eacute;placer. Double-cliquer un commentaire pour le supprimer.
+        </div>
+        <div class="breed-label" id="overlay-breed">
+          <span class="label-tag">Pr&eacute;diction</span>
+          <span class="breed-name" id="breed-name-ovr">&mdash;</span>
+          <span class="breed-conf" id="breed-conf-ovr"></span>
+        </div>
+      </div>
+    </div>
+    <div class="observations">
+      <h3>Observations</h3>
+      <div class="obs-grid">
+        <div class="obs-section"><h4>Classification (top-5 races)</h4><ul id="obs-topk"></ul></div>
+        <div class="obs-section"><h4>Segmentation</h4><div id="obs-seg"></div></div>
+        <div class="obs-section"><h4>Pose</h4><div id="obs-pose"></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const $dataset=$("sel-dataset"), $group=$("sel-group"), $image=$("sel-image");
+const $backend=$("sel-backend"), $sam2=$("sel-sam2-mode");
+const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up");
+const $chkSeg=$("chk-seg"), $chkBox=$("chk-boxes"), $chkKpt=$("chk-keypoints");
+const $btnRun=$("btn-run"), $btnPng=$("btn-export-png"), $btnJson=$("btn-export-json");
+const $spinner=$("spinner"), $error=$("error-msg"), $results=$("results");
+const $srcImg=$("img-source");
+const $ovrBadge=$("overlay-badge"), $gtName=$("gt-name"), $srcBreed=$("source-breed");
+const $breedOvr=$("breed-name-ovr"), $confOvr=$("breed-conf-ovr");
+const $topk=$("obs-topk"), $segObs=$("obs-seg"), $poseObs=$("obs-pose");
+const $dropZone=$("drop-zone"), $fileInput=$("file-input"), $dzText=$("dz-text"), $dzPreview=$("dz-preview");
+const $canvas=$("editor-canvas"), $canvasWrap=$("canvas-wrap");
+const $commentPopup=$("comment-popup"), $commentInput=$("comment-input");
+const $hintBar=$("hint-bar");
+const ctx = $canvas.getContext("2d");
+
+let datasetsCache = {};
+let activeTab = "tab-dataset";
+let uploadedFile = null;
+
+const S = {
+  sourceImg: null,
+  segImg: null,
+  imgW: 0, imgH: 0,
+  boxes: [],
+  keypoints: [],
+  kptConfs: [],
+  boxConfs: [],
+  comments: [],
+  commentNextId: 1,
+  showSeg: true,
+  showBoxes: true,
+  showKpts: true,
+  tool: "move",
+  drag: null,
+  pendingComment: null,
+  imageName: "",
+  imageSize: [],
+  groundTruth: null,
+  classification: null,
+  segmentation: null,
+  pose: null,
+};
+
+/* ── Tabs ────────────────────────────────────────────── */
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === activeTab));
+  });
+});
+
+/* ── Drop zone ───────────────────────────────────────── */
+$dropZone.addEventListener("dragover", e => { e.preventDefault(); $dropZone.classList.add("dragover"); });
+$dropZone.addEventListener("dragleave", () => $dropZone.classList.remove("dragover"));
+$dropZone.addEventListener("drop", e => { e.preventDefault(); $dropZone.classList.remove("dragover"); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+$fileInput.addEventListener("change", () => { if ($fileInput.files.length) handleFile($fileInput.files[0]); });
+
+function handleFile(f) {
+  if (!f.type.startsWith("image/")) return;
+  uploadedFile = f;
+  $dzText.textContent = f.name;
+  $dzPreview.src = URL.createObjectURL(f);
+  $dzPreview.style.display = "block";
+}
+
+/* ── Helpers ─────────────────────────────────────────── */
+function showSpinner(v) { $spinner.classList.toggle("active", v); $btnRun.disabled = v; }
+function showError(msg) { $error.textContent = msg; $error.classList.add("active"); }
+function hideError() { $error.classList.remove("active"); }
+function showResults(v) {
+  $results.classList.toggle("active", v);
+  $btnPng.style.display = v ? "" : "none";
+  $btnJson.style.display = v ? "" : "none";
+  $hintBar.classList.toggle("active", v);
+}
+function getBackend() { return activeTab === "tab-upload" ? $backendUp.value : $backend.value; }
+function getSam2() { return activeTab === "tab-upload" ? $sam2Up.value : $sam2.value; }
+function updateSam2State() { $sam2.disabled = $backend.value !== "sam2"; $sam2Up.disabled = $backendUp.value !== "sam2"; }
+
+/* ── Tool mode ───────────────────────────────────────── */
+document.querySelectorAll(".tool-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    S.tool = btn.dataset.tool;
+    document.querySelectorAll(".tool-btn").forEach(b => b.classList.toggle("active", b === btn));
+    $canvas.style.cursor = S.tool === "comment" ? "crosshair" : "default";
+  });
+});
+
+/* ── Layer toggles ───────────────────────────────────── */
+$chkSeg.addEventListener("change", () => { S.showSeg = $chkSeg.checked; render(); });
+$chkBox.addEventListener("change", () => { S.showBoxes = $chkBox.checked; render(); });
+$chkKpt.addEventListener("change", () => { S.showKpts = $chkKpt.checked; render(); });
+
+/* ── Canvas sizing ───────────────────────────────────── */
+function fitCanvas() {
+  if (!S.imgW || !S.imgH) return;
+  const maxW = $canvasWrap.clientWidth;
+  const maxH = 520;
+  const ratio = S.imgW / S.imgH;
+  let cw, ch;
+  if (maxW / maxH > ratio) { ch = maxH; cw = ch * ratio; }
+  else { cw = maxW; ch = cw / ratio; }
+  $canvas.style.width = cw + "px";
+  $canvas.style.height = ch + "px";
+}
+window.addEventListener("resize", () => { fitCanvas(); });
+
+function eventToImg(e) {
+  const r = $canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * ($canvas.width / r.width),
+    y: (e.clientY - r.top) * ($canvas.height / r.height),
+  };
+}
+function imgToDisplay(ix, iy) {
+  const r = $canvas.getBoundingClientRect();
+  return { x: ix * (r.width / $canvas.width), y: iy * (r.height / $canvas.height) };
+}
+
+/* ── Rendering ───────────────────────────────────────── */
+function render() {
+  ctx.clearRect(0, 0, $canvas.width, $canvas.height);
+  if (S.sourceImg) ctx.drawImage(S.sourceImg, 0, 0);
+  if (S.showSeg && S.segImg) ctx.drawImage(S.segImg, 0, 0);
+  if (S.showBoxes) drawBoxes();
+  if (S.showKpts) drawKeypoints();
+  drawComments();
+}
+
+function scaledStroke() { return Math.max(2, $canvas.width * 0.004); }
+function handleSize() { return Math.max(4, $canvas.width * 0.008); }
+function kptRadius() { return Math.max(4, $canvas.width * 0.007); }
+function hitR() { return Math.max(8, $canvas.width * 0.015); }
+function fontSize() { return Math.max(11, $canvas.width * 0.02); }
+
+function drawBoxes() {
+  const lw = scaledStroke(), hs = handleSize(), fs = fontSize();
+  for (let n = 0; n < S.boxes.length; n++) {
+    const [x1, y1, x2, y2] = S.boxes[n];
+    ctx.strokeStyle = "#32ff32";
+    ctx.lineWidth = lw;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+    if (S.boxConfs[n] !== undefined) {
+      ctx.font = "bold " + fs + "px sans-serif";
+      const label = (S.boxConfs[n] * 100).toFixed(0) + "%";
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(x1, y1 - fs - 4, tw + 8, fs + 4);
+      ctx.fillStyle = "#32ff32";
+      ctx.fillText(label, x1 + 4, y1 - 4);
+    }
+
+    ctx.fillStyle = "#32ff32";
+    const corners = [[x1,y1],[x2,y1],[x2,y2],[x1,y2]];
+    for (const [cx, cy] of corners) ctx.fillRect(cx - hs/2, cy - hs/2, hs, hs);
+  }
+}
+
+function drawKeypoints() {
+  const r = kptRadius(), lw = Math.max(1, $canvas.width * 0.002);
+  for (let n = 0; n < S.keypoints.length; n++) {
+    for (let k = 0; k < S.keypoints[n].length; k++) {
+      if (S.kptConfs[n] && S.kptConfs[n][k] < 0.3) continue;
+      const [kx, ky] = S.keypoints[n][k];
+      ctx.beginPath();
+      ctx.arc(kx, ky, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff00ff";
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    }
+  }
+}
+
+function drawComments() {
+  const fs = fontSize(), pr = Math.max(3, $canvas.width * 0.005);
+  ctx.font = fs + "px sans-serif";
+  for (const c of S.comments) {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, pr, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff4444";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const pad = 4;
+    const tw = ctx.measureText(c.text).width;
+    const bx = c.x + pr + 4;
+    const by = c.y - fs / 2 - pad;
+    const bw = tw + pad * 2;
+    const bh = fs + pad * 2;
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 3);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillText(c.text, bx + pad, c.y + fs / 2 - pad);
+  }
+}
+
+/* ── Hit testing ─────────────────────────────────────── */
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+
+function findKptAt(ix, iy) {
+  const hr = hitR();
+  for (let n = 0; n < S.keypoints.length; n++)
+    for (let k = 0; k < S.keypoints[n].length; k++) {
+      if (S.kptConfs[n] && S.kptConfs[n][k] < 0.3) continue;
+      if (dist(ix, iy, S.keypoints[n][k][0], S.keypoints[n][k][1]) < hr) return { det: n, kpt: k };
+    }
+  return null;
+}
+
+function findCornerAt(ix, iy) {
+  const hr = hitR();
+  for (let n = 0; n < S.boxes.length; n++) {
+    const [x1, y1, x2, y2] = S.boxes[n];
+    const cs = [[x1,y1,0],[x2,y1,1],[x2,y2,2],[x1,y2,3]];
+    for (const [cx, cy, idx] of cs) if (dist(ix, iy, cx, cy) < hr) return { det: n, corner: idx };
+  }
+  return null;
+}
+
+function findBoxBodyAt(ix, iy) {
+  for (let n = 0; n < S.boxes.length; n++) {
+    const [x1, y1, x2, y2] = S.boxes[n];
+    if (ix >= x1 && ix <= x2 && iy >= y1 && iy <= y2) return n;
+  }
+  return -1;
+}
+
+function findCommentAt(ix, iy) {
+  const hr = hitR();
+  for (let i = S.comments.length - 1; i >= 0; i--)
+    if (dist(ix, iy, S.comments[i].x, S.comments[i].y) < hr) return i;
+  return -1;
+}
+
+/* ── Canvas interaction ──────────────────────────────── */
+$canvas.addEventListener("mousedown", onDown);
+$canvas.addEventListener("mousemove", onMove);
+$canvas.addEventListener("mouseup", onUp);
+$canvas.addEventListener("mouseleave", onUp);
+$canvas.addEventListener("dblclick", onDbl);
+
+$canvas.addEventListener("touchstart", e => { e.preventDefault(); onDown(touchToMouse(e)); }, { passive: false });
+$canvas.addEventListener("touchmove", e => { e.preventDefault(); onMove(touchToMouse(e)); }, { passive: false });
+$canvas.addEventListener("touchend", e => { onUp(); });
+
+function touchToMouse(e) {
+  const t = e.touches[0] || e.changedTouches[0];
+  return { clientX: t.clientX, clientY: t.clientY };
+}
+
+function onDown(e) {
+  if (!S.sourceImg) return;
+  const p = eventToImg(e);
+
+  if (S.tool === "comment") {
+    openCommentInput(p.x, p.y);
+    return;
+  }
+
+  const kpt = findKptAt(p.x, p.y);
+  if (kpt) {
+    S.drag = { type: "kpt", det: kpt.det, kpt: kpt.kpt };
+    return;
+  }
+  const crn = findCornerAt(p.x, p.y);
+  if (crn) {
+    S.drag = {
+      type: "corner", det: crn.det, corner: crn.corner,
+      origBox: [...S.boxes[crn.det]],
+      origKpts: S.keypoints[crn.det].map(k => [...k]),
+    };
+    return;
+  }
+  const bi = findBoxBodyAt(p.x, p.y);
+  if (bi >= 0) {
+    S.drag = {
+      type: "box", det: bi, sx: p.x, sy: p.y,
+      origBox: [...S.boxes[bi]],
+      origKpts: S.keypoints[bi].map(k => [...k]),
+    };
+  }
+}
+
+function onMove(e) {
+  if (!S.sourceImg) return;
+  const p = eventToImg(e);
+
+  if (!S.drag) {
+    if (S.tool === "comment") { $canvas.style.cursor = "crosshair"; return; }
+    const hit = findKptAt(p.x, p.y) || findCornerAt(p.x, p.y) || (findBoxBodyAt(p.x, p.y) >= 0);
+    $canvas.style.cursor = hit ? "grab" : "default";
+    return;
+  }
+
+  $canvas.style.cursor = "grabbing";
+
+  if (S.drag.type === "kpt") {
+    S.keypoints[S.drag.det][S.drag.kpt] = [p.x, p.y];
+  } else if (S.drag.type === "box") {
+    const dx = p.x - S.drag.sx, dy = p.y - S.drag.sy;
+    const ob = S.drag.origBox;
+    S.boxes[S.drag.det] = [ob[0]+dx, ob[1]+dy, ob[2]+dx, ob[3]+dy];
+    for (let k = 0; k < S.keypoints[S.drag.det].length; k++)
+      S.keypoints[S.drag.det][k] = [S.drag.origKpts[k][0]+dx, S.drag.origKpts[k][1]+dy];
+  } else if (S.drag.type === "corner") {
+    const ob = S.drag.origBox;
+    let nb = [...ob];
+    if (S.drag.corner === 0) nb = [p.x, p.y, ob[2], ob[3]];
+    else if (S.drag.corner === 1) nb = [ob[0], p.y, p.x, ob[3]];
+    else if (S.drag.corner === 2) nb = [ob[0], ob[1], p.x, p.y];
+    else nb = [p.x, ob[1], ob[2], p.y];
+    nb = nb.map((v, i) => Math.max(0, Math.min(v, i % 2 === 0 ? S.imgW : S.imgH)));
+
+    const ow = ob[2] - ob[0] || 1, oh = ob[3] - ob[1] || 1;
+    const nw = nb[2] - nb[0] || 1, nh = nb[3] - nb[1] || 1;
+    for (let k = 0; k < S.keypoints[S.drag.det].length; k++) {
+      const ok = S.drag.origKpts[k];
+      S.keypoints[S.drag.det][k] = [
+        nb[0] + (ok[0] - ob[0]) * nw / ow,
+        nb[1] + (ok[1] - ob[1]) * nh / oh,
+      ];
+    }
+    S.boxes[S.drag.det] = nb;
+  }
+  render();
+}
+
+function onUp() {
+  S.drag = null;
+  $canvas.style.cursor = S.tool === "comment" ? "crosshair" : "default";
+}
+
+function onDbl(e) {
+  const p = eventToImg(e);
+  const ci = findCommentAt(p.x, p.y);
+  if (ci >= 0) {
+    S.comments.splice(ci, 1);
+    render();
+  }
+}
+
+/* ── Comment input ───────────────────────────────────── */
+function openCommentInput(ix, iy) {
+  const dp = imgToDisplay(ix, iy);
+  const wr = $canvasWrap.getBoundingClientRect();
+  $commentPopup.style.left = dp.x + "px";
+  $commentPopup.style.top = dp.y + "px";
+  $commentPopup.style.display = "block";
+  $commentInput.value = "";
+  $commentInput.focus();
+  S.pendingComment = { x: ix, y: iy };
+}
+
+$commentInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") saveComment();
+  if (e.key === "Escape") closeCommentInput();
+});
+$commentInput.addEventListener("blur", () => { if (S.pendingComment) closeCommentInput(); });
+
+function saveComment() {
+  const txt = $commentInput.value.trim();
+  if (txt && S.pendingComment) {
+    S.comments.push({ id: S.commentNextId++, x: S.pendingComment.x, y: S.pendingComment.y, text: txt });
+    render();
+  }
+  closeCommentInput();
+}
+
+function closeCommentInput() {
+  $commentPopup.style.display = "none";
+  S.pendingComment = null;
+}
+
+/* ── Datasets ────────────────────────────────────────── */
+async function loadDatasets() {
+  const res = await fetch("/api/datasets");
+  datasetsCache = await res.json();
+  $dataset.innerHTML = "";
+  for (const [name, info] of Object.entries(datasetsCache)) {
+    const o = document.createElement("option"); o.value = name;
+    o.textContent = `${name}  (${info.total_images} images)`;
+    $dataset.appendChild(o);
+  }
+  onDatasetChange();
+}
+function onDatasetChange() {
+  const ds = datasetsCache[$dataset.value]; if (!ds) return;
+  $group.innerHTML = "";
+  for (const [g, c] of Object.entries(ds.groups)) { const o = document.createElement("option"); o.value = g; o.textContent = `${g}  (${c})`; $group.appendChild(o); }
+  $group.disabled = false; onGroupChange();
+}
+async function onGroupChange() {
+  const ds = $dataset.value, gr = $group.value;
+  if (!ds || !gr) { $image.innerHTML = "<option>\u2014</option>"; $image.disabled = true; return; }
+  const res = await fetch(`/api/images?dataset=${encodeURIComponent(ds)}&group=${encodeURIComponent(gr)}`);
+  const files = await res.json();
+  $image.innerHTML = "";
+  for (const f of files) { const o = document.createElement("option"); o.value = f; o.textContent = f; $image.appendChild(o); }
+  $image.disabled = !files.length;
+}
+
+/* ── Run inference ───────────────────────────────────── */
+async function runInference() {
+  hideError(); showResults(false); showSpinner(true);
+  try {
+    if (activeTab === "tab-upload") { if (!uploadedFile) { showError("Veuillez s\u00e9lectionner une image."); return; } await runUpload(); }
+    else { await runDataset(); }
+  } catch (e) { showError("Erreur : " + e.message); }
+  finally { showSpinner(false); }
+}
+
+async function runDataset() {
+  const r = await fetch("/api/inference", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ dataset: $dataset.value, group: $group.value, filename: $image.value, seg_backend: getBackend(), sam2_mode: getSam2() }),
+  });
+  const d = await r.json();
+  if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
+  displayResults(d);
+}
+
+async function runUpload() {
+  const fd = new FormData();
+  fd.append("file", uploadedFile); fd.append("seg_backend", getBackend()); fd.append("sam2_mode", getSam2());
+  const r = await fetch("/api/inference/upload", { method: "POST", body: fd });
+  const d = await r.json();
+  if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
+  displayResults(d);
+}
+
+/* ── Display results ─────────────────────────────────── */
+function displayResults(d) {
+  $srcImg.src = "data:image/jpeg;base64," + d.source_b64;
+
+  S.comments = [];
+  S.commentNextId = 1;
+  S.imageName = d.image_name || "";
+  S.imageSize = d.image_size;
+  S.groundTruth = d.ground_truth || null;
+  S.classification = d.classification;
+  S.segmentation = d.segmentation;
+  S.pose = d.pose;
+
+  const ann = d.pose_annotations || {};
+  S.boxes = (ann.boxes || []).map(b => [...b]);
+  S.keypoints = (ann.keypoints || []).map(det => det.map(k => [...k]));
+  S.kptConfs = (ann.kpt_confs || []).map(det => [...det]);
+  S.boxConfs = [...(ann.box_confs || [])];
+
+  const imgW = d.image_size[0], imgH = d.image_size[1];
+  S.imgW = imgW; S.imgH = imgH;
+  $canvas.width = imgW; $canvas.height = imgH;
+
+  $chkSeg.checked = true; $chkBox.checked = true; $chkKpt.checked = true;
+  S.showSeg = true; S.showBoxes = true; S.showKpts = true;
+
+  if (d.ground_truth) { $gtName.textContent = d.ground_truth; $srcBreed.style.display = ""; }
+  else { $gtName.textContent = ""; $srcBreed.style.display = "none"; }
+
+  const cls = d.classification;
+  $breedOvr.textContent = cls.class_name || "\u2014";
+  $confOvr.textContent = cls.confidence.toFixed(1) + " %";
+  $ovrBadge.textContent = d.segmentation.backend;
+
+  $topk.innerHTML = "";
+  for (const e of cls.top_k) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${e.rank}. ${e.class_name || "\u2014"}</span><span>${e.confidence}%</span>`;
+    const bar = document.createElement("span"); bar.className = "bar";
+    bar.style.width = Math.max(2, e.confidence) + "%";
+    bar.style.background = e.rank === 1 ? "#3b82f6" : "#93c5fd";
+    li.appendChild(bar); $topk.appendChild(li);
+  }
+
+  const seg = d.segmentation;
+  const clsL = {0:"foreground",1:"background",2:"border"};
+  let sh = `<div><strong>Backend :</strong> ${seg.backend}</div>`;
+  for (const s of seg.distribution) {
+    sh += `<div class="stat"><span>${clsL[s.class]||"cls"+s.class}</span><span class="bar" style="width:${Math.max(s.pct,2)}%;background:#10b981;"></span><span>${s.pct}%</span></div>`;
+  }
+  $segObs.innerHTML = sh;
+
+  const pose = d.pose;
+  let ph = `<div><strong>D\u00e9tections :</strong> ${pose.num_detections}</div>`;
+  if (pose.best_conf !== null) ph += `<div><strong>Meilleure conf :</strong> ${pose.best_conf}</div>`;
+  $poseObs.innerHTML = ph;
+
+  showResults(true);
+
+  requestAnimationFrame(() => {
+    fitCanvas();
+    const sourceImg = new Image();
+    sourceImg.onload = () => {
+      S.sourceImg = sourceImg;
+      const segImg = new Image();
+      segImg.onload = () => { S.segImg = segImg; render(); };
+      segImg.src = "data:image/png;base64," + d.seg_b64;
+      render();
+    };
+    sourceImg.src = "data:image/jpeg;base64," + d.source_b64;
+  });
+}
+
+/* ── Export PNG ───────────────────────────────────────── */
+function exportPng() {
+  if (!S.sourceImg) return;
+  const tc = document.createElement("canvas");
+  tc.width = S.imgW; tc.height = S.imgH;
+  const tctx = tc.getContext("2d");
+  tctx.drawImage(S.sourceImg, 0, 0);
+  if (S.segImg) tctx.drawImage(S.segImg, 0, 0);
+
+  const lw = Math.max(2, S.imgW * 0.004), hs = Math.max(4, S.imgW * 0.008);
+  const fs = Math.max(11, S.imgW * 0.02), kr = Math.max(4, S.imgW * 0.007);
+
+  if (S.showBoxes) {
+    for (let n = 0; n < S.boxes.length; n++) {
+      const [x1,y1,x2,y2] = S.boxes[n];
+      tctx.strokeStyle = "#32ff32"; tctx.lineWidth = lw;
+      tctx.strokeRect(x1, y1, x2-x1, y2-y1);
+      tctx.fillStyle = "#32ff32";
+      for (const [cx,cy] of [[x1,y1],[x2,y1],[x2,y2],[x1,y2]])
+        tctx.fillRect(cx-hs/2, cy-hs/2, hs, hs);
+    }
+  }
+  if (S.showKpts) {
+    for (let n = 0; n < S.keypoints.length; n++)
+      for (let k = 0; k < S.keypoints[n].length; k++) {
+        if (S.kptConfs[n] && S.kptConfs[n][k] < 0.3) continue;
+        const [kx,ky] = S.keypoints[n][k];
+        tctx.beginPath(); tctx.arc(kx, ky, kr, 0, Math.PI*2);
+        tctx.fillStyle = "#ff00ff"; tctx.fill();
+      }
+  }
+
+  tctx.font = fs + "px sans-serif";
+  for (const c of S.comments) {
+    const pr = Math.max(3, S.imgW * 0.005);
+    tctx.beginPath(); tctx.arc(c.x, c.y, pr, 0, Math.PI*2);
+    tctx.fillStyle = "#ff4444"; tctx.fill();
+    const tw = tctx.measureText(c.text).width, pad = 4;
+    tctx.fillStyle = "rgba(0,0,0,0.75)";
+    tctx.fillRect(c.x+pr+4, c.y-fs/2-pad, tw+pad*2, fs+pad*2);
+    tctx.fillStyle = "#fff";
+    tctx.fillText(c.text, c.x+pr+4+pad, c.y+fs/2-pad);
+  }
+
+  const a = document.createElement("a");
+  a.href = tc.toDataURL("image/png");
+  a.download = (S.imageName || "overlay") + "_annotated.png";
+  a.click();
+}
+
+/* ── Export JSON ──────────────────────────────────────── */
+function exportJson() {
+  const payload = {
+    image_name: S.imageName,
+    image_size: S.imageSize,
+    ground_truth: S.groundTruth,
+    classification: S.classification,
+    segmentation: S.segmentation,
+    pose: S.pose,
+    pose_annotations: {
+      boxes: S.boxes,
+      keypoints: S.keypoints,
+      kpt_confs: S.kptConfs,
+      box_confs: S.boxConfs,
+    },
+    comments: S.comments,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (S.imageName || "overlay") + "_annotations.json";
+  a.click();
+}
+
+/* ── Events ──────────────────────────────────────────── */
+$dataset.addEventListener("change", onDatasetChange);
+$group.addEventListener("change", onGroupChange);
+$backend.addEventListener("change", updateSam2State);
+$backendUp.addEventListener("change", updateSam2State);
+$btnRun.addEventListener("click", runInference);
+$btnPng.addEventListener("click", exportPng);
+$btnJson.addEventListener("click", exportJson);
+
+document.addEventListener("DOMContentLoaded", () => { updateSam2State(); loadDatasets(); });
+</script>
+</body>
+</html>

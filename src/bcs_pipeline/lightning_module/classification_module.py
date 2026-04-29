@@ -83,6 +83,7 @@ class LitClassificationModule(LightningModule):
         scheduler_config: dict = None,
         regularization: dict = None,
         tensorboard: dict = None,
+        pretrained: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -109,7 +110,7 @@ class LitClassificationModule(LightningModule):
         if model_name == "resnet50":
             self.net = ResNetTransfer(
                 num_classes=num_classes,
-                pretrained=True,
+                pretrained=pretrained,
                 dropout=self.dropout,
                 stochastic_depth=self.stochastic_depth,
             )
@@ -117,6 +118,7 @@ class LitClassificationModule(LightningModule):
             self.net = ViTTransfer(
                 num_classes=num_classes,
                 dropout=self.dropout,
+                pretrained=pretrained,
             )
         else:
             raise ValueError(f"Model {model_name} not supported.")

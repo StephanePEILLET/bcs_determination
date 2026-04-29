@@ -52,8 +52,8 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 | Framework DL | PyTorch + PyTorch Lightning |
 | Hyperparamètres | Hydra + Optuna |
 | Logging | TensorBoard (+ W&B optionnel) |
-| Modèles | torchvision (ResNet, DeepLabV3), HuggingFace Transformers (ViT) |
-| Serveur d'inférence | FastAPI |
+| Modèles | torchvision (ResNet, DeepLabV3), HuggingFace Transformers (ViT), SAM 2, YOLOv8 |
+| Serveur d'inférence | Flask (UI interactive) |
 | Container | Docker |
 
 ## Notebooks d'évaluation
@@ -65,6 +65,7 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 | `visualize_results_Race_Classif_Stanford_Dogs.ipynb` | Évaluation ResNet-50 (t-SNE, calibration, rapports par classe) |
 | `evaluate_segmentation_oxford_pet.ipynb` | Évaluation DeepLabV3 (IoU/Dice, overlays, Reddit) |
 | `sam2_comparison.ipynb` | Comparaison SAM2 vs DeepLabV3 pour la segmentation |
+| `combined_inference_overlay.ipynb` | **Pipeline combiné** : classification + segmentation + pose avec widget interactif |
 | `edge_detection.ipynb` | Comparaison exhaustive de contours (skimage, Kornia, OpenCV) |
 | `unsupervised_segmentation.ipynb` | Baselines de segmentation non supervisée |
 | `pose_detection.ipynb` | Détection de pose avec OpenPose |
@@ -77,9 +78,9 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 2. [Setup & Installation](#setup--installation)
 3. [Training](#training)
 4. [Inference](#inference)
-5. [Evaluation Notebooks](#evaluation-notebooks)
-6. [Architecture & Module Reference](#architecture--module-reference)
-7. [Deployment](#deployment)
+5. [Application web Flask](#application-web-flask)
+6. [Evaluation Notebooks](#evaluation-notebooks)
+7. [Architecture & Module Reference](#architecture--module-reference)
 8. [Configuration Reference](#configuration-reference)
 
 ## Project Structure
@@ -96,7 +97,13 @@ bcs_determination/
 │       ├── loggers.py                     # Logger factories (TensorBoard, W&B)
 │       ├── trainer_factory.py             # High-level Trainer builder
 │       ├── inference/                     # Shared inference utilities
-│       │   └── __init__.py
+│       │   ├── __init__.py                # Public API re-exports
+│       │   ├── classification.py          # ResNet/ViT breed prediction
+│       │   ├── segmentation.py            # DeepLabV3 trimap + backend dispatch
+│       │   ├── segmentation_sam2.py       # SAM 2 zero-shot segmentation
+│       │   ├── pose.py                    # YOLOv8 keypoint detection
+│       │   ├── visualization.py           # PIL overlay rendering
+│       │   └── pipeline.py                # Combined orchestrator
 │       ├── data/
 │       │   ├── stanford_classification_datamodule.py
 │       │   ├── stanford_segmentation_datamodule.py
@@ -113,7 +120,10 @@ bcs_determination/
 │           ├── config_validation.py
 │           ├── dataset_stats.py
 │           └── logging_utils.py
+├── templates/
+│   └── index.html                         # Flask UI (single-page)
 ├── notebooks/
+│   ├── combined_inference_overlay.ipynb   # Widget interactif (même logique que l'app)
 │   ├── evaluate_vit_classification_Stanford_Dogs.ipynb
 │   ├── visualize_results_Race_Classif_Stanford_Dogs.ipynb
 │   ├── evaluate_segmentation_oxford_pet.ipynb
@@ -123,17 +133,19 @@ bcs_determination/
 │   ├── unsupervised_segmentation.ipynb
 │   └── pose_detection.ipynb
 ├── data/
-│   ├── Stanford_dogs/                     # 120 breed folders
+│   ├── stanford_dogs/                     # 120 breed folders
 │   ├── Oxford-IIIT_pet_dataset/           # Pet images + trimaps
-│   └── Reddit_example/                    # 2 out-of-distribution webp images
+│   ├── Reddit_example/                    # Out-of-distribution webp images
+│   └── Dog_Pose_Estimations/              # YOLOv8 pose training data
 ├── experiments/                           # Auto-generated (checkpoints, TB logs, splits)
 │   ├── resnet50_adam_cosine_annealing/
 │   ├── vit_adam_cosine_annealing/
 │   └── deeplabv3_resnet50_adam_cosine_annealing/
-├── models/pose/                           # OpenPose prototxt
+├── checkpoints/                           # SAM 2 foundation model weights
+├── runs/pose/                             # YOLOv8 pose training outputs
 ├── train.py                               # Training entry-point
 ├── inference.py                           # CLI inference
-├── app.py                                 # FastAPI server
+├── app.py                                 # Flask web app (UI interactive)
 ├── environment.yaml
 ├── Dockerfile
 └── README.md
@@ -145,7 +157,7 @@ bcs_determination/
 |---|---|
 | **Modularity** | Each concern (callbacks, loggers, trainer, inference) is in its own module. |
 | **Reusability** | `bcs_pipeline.inference` is shared by `inference.py`, `app.py`, and notebooks. |
-| **Lightweight entry-points** | `train.py` and `inference.py` contain only orchestration — no business logic. |
+| **Lightweight entry-points** | `train.py`, `inference.py`, and `app.py` contain only orchestration — no business logic. |
 | **Configuration-driven** | All hyperparameters live in `configs/config.yaml` and can be overridden via CLI. |
 
 ---
@@ -328,11 +340,20 @@ Lightweight Hydra-decorated entry-point.  Steps:
 
 | Function | Purpose |
 |---|---|
-| `load_model(ckpt, ...)` | Load checkpoint → eval mode |
+| `load_model(ckpt, ...)` | Load classification checkpoint → eval mode |
 | `load_class_names(data_dir)` | Parse breed names from dataset folders |
 | `get_inference_transform(size)` | Deterministic val/inference transforms |
 | `predict_single(model, image)` | Predict on one PIL image (top-k) |
 | `predict_batch(model, batch)` | Predict on a pre-processed tensor batch |
+| `load_segmentation_backend(backend, ckpt)` | Load DeepLabV3 or SAM 2 model |
+| `predict_segmentation_with(backend, handle, image, ...)` | Dispatch segmentation to chosen backend |
+| `load_sam2_model(ckpt, config)` | Load SAM 2 predictor + auto mask generator |
+| `predict_segmentation_sam2(handle, image, mode, ...)` | SAM 2 segmentation (prompted/automatic/pose_prompted) |
+| `load_pose_model(ckpt)` | Load YOLOv8 pose model |
+| `predict_pose(model, image, ...)` | Run keypoint detection on a PIL image |
+| `render_combined(image, classification, segmentation, pose)` | Compose all overlays into one PIL image |
+| `save_visualization(image, path)` | Save visualization PNG to disk |
+| `run_full_inference(image, ...)` | Combined orchestrator (all 3 pipelines) |
 
 ### `bcs_pipeline.lightning_module.LitClassificationModule`
 
@@ -377,21 +398,62 @@ Segmentation `LightningModule` (DeepLabV3-ResNet50) with:
 
 ---
 
-## Deployment
+## Application web Flask
 
-### Local API (FastAPI)
+`app.py` fournit une **interface web interactive** qui réplique le widget du notebook `combined_inference_overlay.ipynb` directement dans le navigateur. Elle permet d'explorer visuellement les résultats des trois pipelines sur toutes les images des datasets locaux.
+
+### Fonctionnalités
+
+- **Sélection de dataset** : Reddit (out-of-distribution), Stanford Dogs (120 races), Oxford-IIIT Pet (chiens + chats)
+- **Sélection d'image** : navigation par race/groupe puis par fichier
+- **Choix du backend de segmentation** : DeepLabV3 (fine-tuned) ou SAM 2 (zero-shot)
+- **3 modes SAM 2** : `prompted` (point central), `automatic` (grille dense), `pose_prompted` (bbox + keypoints YOLO)
+- **Affichage côte à côte** : image source / overlay avec segmentation + pose + label de classification
+- **Observations textuelles** : top-5 races, distribution des classes de segmentation, nombre de détections de pose
+
+### Lancement
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000
+conda activate bcs_analysis
+python app.py
 ```
 
-Interactive docs at `http://localhost:8000/docs`.
+Ouvrir **http://localhost:5000** dans un navigateur.
+
+> Les modèles sont chargés en mémoire au premier appel d'inférence (lazy loading). Le premier run est plus lent, les suivants sont instantanés.
+
+### Points d'accès API
+
+| Route | Méthode | Description |
+|---|---|---|
+| `GET /` | — | Interface web |
+| `GET /api/datasets` | — | Liste les datasets, groupes et nombre d'images |
+| `GET /api/images?dataset=&group=` | — | Liste les fichiers d'un groupe |
+| `GET /api/thumbnail/<dataset>/<group>/<file>` | — | Sert un thumbnail JPEG (256 px) |
+| `POST /api/inference` | JSON body | Lance les 3 pipelines, retourne les images base64 + observations |
+
+Exemple d'appel API programmatique :
+
+```python
+import requests
+
+resp = requests.post("http://localhost:5000/api/inference", json={
+    "dataset": "Reddit",
+    "group": "all",
+    "filename": "is-my-dog-overweight-v0-am4q7ltvecng1.webp",
+    "seg_backend": "sam2",
+    "sam2_mode": "pose_prompted",
+})
+result = resp.json()
+print(result["classification"]["class_name"])   # ex: "golden_retriever"
+print(result["pose"]["num_detections"])           # ex: 1
+```
 
 ### Docker
 
 ```bash
-docker build -t bcs_determination_api .
-docker run -p 8000:8000 bcs_determination_api
+docker build -t bcs_determination .
+docker run -p 5000:5000 bcs_determination
 ```
 
 ---

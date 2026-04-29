@@ -180,9 +180,10 @@ def train(cfg: DictConfig) -> float:
             optimizer_name=cfg.optimizer_name,
             weight_decay=cfg.get("weight_decay", 1e-4),
             scheduler_config=cfg.scheduler_config,
-            regularization=cfg.get("regularization", {}),
+            regularization=cfg.get("regularization", {}), 
             tensorboard=cfg.get("tensorboard", {}),
         )
+
 
     # ── 7. Trainer (callbacks + loggers wired automatically) ─────────
     logger.info("Setting up trainer…")

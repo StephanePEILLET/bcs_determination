@@ -75,6 +75,7 @@ class LitSegmentationModule(pl.LightningModule):
         weight_ce: float = 1.0,
         weight_dice: float = 1.0,
         tensorboard: Optional[dict] = None,
+        pretrained: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -86,9 +87,8 @@ class LitSegmentationModule(pl.LightningModule):
         self.histogram_every_n_epochs = tb.get("histogram_every_n_epochs", 5)
 
         # ── Model ──
-        self.net = deeplabv3_resnet50(
-            weights=DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1,
-        )
+        weights = DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1 if pretrained else None
+        self.net = deeplabv3_resnet50(weights=weights)
         self.net.classifier[4] = nn.Conv2d(
             256, num_classes, kernel_size=1,
         )

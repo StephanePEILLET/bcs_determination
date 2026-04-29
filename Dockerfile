@@ -20,10 +20,8 @@ SHELL ["conda", "run", "-n", "bcs_analysis", "/bin/bash", "-c"]
 COPY . /app/
 
 # Expose the API port
-EXPOSE 8000
+EXPOSE 5000
 
-# The Entrypoint directs Docker to launch all CMD instructions via the active Conda environment
 ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "bcs_analysis"]
 
-# Launch the FastAPI web server wrapper using uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "app.py"]

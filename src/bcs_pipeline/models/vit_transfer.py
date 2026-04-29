@@ -14,17 +14,26 @@ class ViTTransfer(nn.Module):
         num_classes: int = 120,
         model_name: str = "google/vit-base-patch16-224-in21k",
         dropout: float = 0.0,
+        pretrained: bool = True,
     ):
         super().__init__()
-        # ignore_mismatched_sizes=True drops the classifier head trained on 21k classes
-        # and re-initializes one for `num_classes` automatically.
-        self.vit = AutoModelForImageClassification.from_pretrained(
-            model_name,
-            num_labels=num_classes,
-            ignore_mismatched_sizes=True,
-            hidden_dropout_prob=dropout,
-            attention_probs_dropout_prob=dropout,
-        )
+        if pretrained:
+            self.vit = AutoModelForImageClassification.from_pretrained(
+                model_name,
+                num_labels=num_classes,
+                ignore_mismatched_sizes=True,
+                hidden_dropout_prob=dropout,
+                attention_probs_dropout_prob=dropout,
+            )
+        else:
+            from transformers import AutoConfig
+            config = AutoConfig.from_pretrained(
+                model_name,
+                num_labels=num_classes,
+                hidden_dropout_prob=dropout,
+                attention_probs_dropout_prob=dropout,
+            )
+            self.vit = AutoModelForImageClassification.from_config(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Transformers models return an object, we only want the bare logits
