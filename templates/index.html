@@ -197,6 +197,10 @@
         <div class="field"><label>Race / Groupe</label><select id="sel-group" disabled><option value="">&mdash;</option></select></div>
         <div class="field"><label>Image</label><select id="sel-image" disabled><option value="">&mdash;</option></select></div>
         <div class="field">
+          <label>Classifieur de race</label>
+          <select id="sel-classifier"><option value="stanford">Chargement&hellip;</option></select>
+        </div>
+        <div class="field">
           <label>Segmentation</label>
           <select id="sel-backend"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
         </div>
@@ -215,6 +219,10 @@
       </div>
       <div class="controls-grid" style="margin-top:12px;">
         <div class="field">
+          <label>Classifieur de race</label>
+          <select id="sel-classifier-up"><option value="stanford">Chargement&hellip;</option></select>
+        </div>
+        <div class="field">
           <label>Segmentation</label>
           <select id="sel-backend-up"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
         </div>
@@ -230,6 +238,13 @@
     <span class="label-sm">Outil</span>
     <button class="tool-btn active" id="tool-move" data-tool="move">&#9995;&ensp;D&eacute;placer</button>
     <button class="tool-btn" id="tool-comment" data-tool="comment">&#128172;&ensp;Commentaire</button>
+    <button class="tool-btn" id="tool-brush" data-tool="brush">&#127912;&ensp;Pinceau</button>
+    <button class="tool-btn" id="tool-eraser" data-tool="eraser">&#9003;&ensp;Gomme</button>
+    <span class="brush-size-wrap" id="brush-size-wrap" style="display:none;align-items:center;gap:6px;">
+      <span class="label-sm">Taille</span>
+      <input type="range" id="brush-size" min="5" max="120" value="30" style="width:90px;">
+      <span id="brush-size-val" style="font-size:12px;color:#374151;width:28px;text-align:right;">30</span>
+    </span>
     <span style="width:1px;height:24px;background:#e5e7eb;"></span>
     <span class="label-sm">Couches</span>
     <label class="toggle"><input type="checkbox" id="chk-seg" checked><span class="swatch" style="background:#00c800;"></span>Segmentation</label>
@@ -300,6 +315,7 @@ const $ = id => document.getElementById(id);
 const $dataset=$("sel-dataset"), $group=$("sel-group"), $image=$("sel-image");
 const $backend=$("sel-backend"), $sam2=$("sel-sam2-mode");
 const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up");
+const $classifier=$("sel-classifier"), $classifierUp=$("sel-classifier-up");
 const $chkSeg=$("chk-seg"), $chkBox=$("chk-boxes"), $chkKpt=$("chk-keypoints");
 const $btnRun=$("btn-run"), $btnPng=$("btn-export-png"), $btnJson=$("btn-export-json"), $btnSave=$("btn-save");
 const $spinner=$("spinner"), $error=$("error-msg"), $results=$("results");
@@ -340,7 +356,15 @@ const S = {
   classification: null,
   segmentation: null,
   pose: null,
+  maskCanvas: null,
+  maskCtx: null,
+  maskDirty: false,
+  brushSize: 30,
+  cursorPos: null,
 };
+const $brushSize = $("brush-size");
+const $brushSizeVal = $("brush-size-val");
+const $brushSizeWrap = $("brush-size-wrap");
 
 /* ── Tabs ────────────────────────────────────────────── */
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -378,15 +402,56 @@ function showResults(v) {
 }
 function getBackend() { return activeTab === "tab-upload" ? $backendUp.value : $backend.value; }
 function getSam2() { return activeTab === "tab-upload" ? $sam2Up.value : $sam2.value; }
+function getClassifier() { return activeTab === "tab-upload" ? $classifierUp.value : $classifier.value; }
 function updateSam2State() { $sam2.disabled = $backend.value !== "sam2"; $sam2Up.disabled = $backendUp.value !== "sam2"; }
 
+async function loadClassifiers() {
+  try {
+    const r = await fetch("/api/classifiers");
+    const data = await r.json();
+    const def = data.default || "stanford";
+    function fillSelect(sel) {
+      sel.innerHTML = "";
+      for (const [key, info] of Object.entries(data.available || {})) {
+        const o = document.createElement("option");
+        o.value = key;
+        o.textContent = info.ready
+          ? info.label
+          : info.label + "  (non entraîné)";
+        if (!info.ready) o.disabled = true;
+        sel.appendChild(o);
+      }
+      sel.value = def;
+    }
+    fillSelect($classifier);
+    fillSelect($classifierUp);
+  } catch (e) {
+    console.warn("Could not load classifiers list:", e);
+  }
+}
+
 /* ── Tool mode ───────────────────────────────────────── */
+function setCursorForTool() {
+  if (S.tool === "comment") $canvas.style.cursor = "crosshair";
+  else if (S.tool === "brush" || S.tool === "eraser") $canvas.style.cursor = "none";
+  else $canvas.style.cursor = "default";
+}
 document.querySelectorAll(".tool-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     S.tool = btn.dataset.tool;
     document.querySelectorAll(".tool-btn").forEach(b => b.classList.toggle("active", b === btn));
-    $canvas.style.cursor = S.tool === "comment" ? "crosshair" : "default";
+    const isPaint = S.tool === "brush" || S.tool === "eraser";
+    $brushSizeWrap.style.display = isPaint ? "inline-flex" : "none";
+    if (!isPaint) S.cursorPos = null;
+    setCursorForTool();
+    render();
   });
+});
+
+$brushSize.addEventListener("input", () => {
+  S.brushSize = parseInt($brushSize.value, 10) || 30;
+  $brushSizeVal.textContent = S.brushSize;
+  if (S.cursorPos) render();
 });
 
 /* ── Layer toggles ───────────────────────────────────── */
@@ -424,10 +489,60 @@ function imgToDisplay(ix, iy) {
 function render() {
   ctx.clearRect(0, 0, $canvas.width, $canvas.height);
   if (S.sourceImg) ctx.drawImage(S.sourceImg, 0, 0);
-  if (S.showSeg && S.segImg) ctx.drawImage(S.segImg, 0, 0);
+  if (S.showSeg) {
+    if (S.maskCanvas) ctx.drawImage(S.maskCanvas, 0, 0);
+    else if (S.segImg) ctx.drawImage(S.segImg, 0, 0);
+  }
   if (S.showBoxes) drawBoxes();
   if (S.showKpts) drawKeypoints();
   drawComments();
+  drawBrushCursor();
+}
+
+function drawBrushCursor() {
+  if (!S.cursorPos) return;
+  if (S.tool !== "brush" && S.tool !== "eraser") return;
+  const r = S.brushSize / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(S.cursorPos.x, S.cursorPos.y, r, 0, Math.PI * 2);
+  ctx.lineWidth = Math.max(1, $canvas.width * 0.0015);
+  ctx.strokeStyle = S.tool === "brush" ? "rgba(0,200,0,0.95)" : "rgba(255,80,80,0.95)";
+  ctx.stroke();
+  ctx.lineWidth = Math.max(1, $canvas.width * 0.0008);
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function paintAt(ix, iy) {
+  if (!S.maskCtx) return;
+  const r = S.brushSize / 2;
+  const mctx = S.maskCtx;
+  mctx.save();
+  if (S.tool === "brush") {
+    mctx.globalCompositeOperation = "source-over";
+    mctx.fillStyle = "rgba(0,200,0,0.4)";
+  } else {
+    mctx.globalCompositeOperation = "destination-out";
+    mctx.fillStyle = "rgba(0,0,0,1)";
+  }
+  mctx.beginPath();
+  mctx.arc(ix, iy, r, 0, Math.PI * 2);
+  mctx.fill();
+  mctx.restore();
+  S.maskDirty = true;
+}
+
+function paintLine(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  const step = Math.max(1, S.brushSize / 4);
+  const n = Math.max(1, Math.ceil(dist / step));
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    paintAt(x0 + dx * t, y0 + dy * t);
+  }
 }
 
 function scaledStroke() { return Math.max(2, $canvas.width * 0.004); }
@@ -546,7 +661,7 @@ function findCommentAt(ix, iy) {
 $canvas.addEventListener("mousedown", onDown);
 $canvas.addEventListener("mousemove", onMove);
 $canvas.addEventListener("mouseup", onUp);
-$canvas.addEventListener("mouseleave", onUp);
+$canvas.addEventListener("mouseleave", onLeave);
 $canvas.addEventListener("dblclick", onDbl);
 
 $canvas.addEventListener("touchstart", e => { e.preventDefault(); onDown(touchToMouse(e)); }, { passive: false });
@@ -564,6 +679,14 @@ function onDown(e) {
 
   if (S.tool === "comment") {
     openCommentInput(p.x, p.y);
+    return;
+  }
+
+  if (S.tool === "brush" || S.tool === "eraser") {
+    paintAt(p.x, p.y);
+    S.drag = { type: "paint", lx: p.x, ly: p.y };
+    S.cursorPos = p;
+    render();
     return;
   }
 
@@ -594,6 +717,16 @@ function onDown(e) {
 function onMove(e) {
   if (!S.sourceImg) return;
   const p = eventToImg(e);
+
+  if (S.tool === "brush" || S.tool === "eraser") {
+    S.cursorPos = p;
+    if (S.drag && S.drag.type === "paint") {
+      paintLine(S.drag.lx, S.drag.ly, p.x, p.y);
+      S.drag.lx = p.x; S.drag.ly = p.y;
+    }
+    render();
+    return;
+  }
 
   if (!S.drag) {
     if (S.tool === "comment") { $canvas.style.cursor = "crosshair"; return; }
@@ -626,7 +759,14 @@ function onMove(e) {
 
 function onUp() {
   S.drag = null;
-  $canvas.style.cursor = S.tool === "comment" ? "crosshair" : "default";
+  setCursorForTool();
+}
+
+function onLeave() {
+  S.drag = null;
+  S.cursorPos = null;
+  setCursorForTool();
+  if (S.tool === "brush" || S.tool === "eraser") render();
 }
 
 function onDbl(e) {
@@ -654,7 +794,7 @@ $commentInput.addEventListener("keydown", e => {
   if (e.key === "Enter") saveComment();
   if (e.key === "Escape") closeCommentInput();
 });
-$commentInput.addEventListener("blur", () => { if (S.pendingComment) closeCommentInput(); });
+$commentInput.addEventListener("blur", () => { if (S.pendingComment) saveComment(); });
 
 function saveComment() {
   const txt = $commentInput.value.trim();
@@ -711,7 +851,11 @@ async function runInference() {
 async function runDataset() {
   const r = await fetch("/api/inference", {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ dataset: $dataset.value, group: $group.value, filename: $image.value, seg_backend: getBackend(), sam2_mode: getSam2() }),
+    body: JSON.stringify({
+      dataset: $dataset.value, group: $group.value, filename: $image.value,
+      seg_backend: getBackend(), sam2_mode: getSam2(),
+      classifier: getClassifier(),
+    }),
   });
   const d = await r.json();
   if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
@@ -720,7 +864,10 @@ async function runDataset() {
 
 async function runUpload() {
   const fd = new FormData();
-  fd.append("file", uploadedFile); fd.append("seg_backend", getBackend()); fd.append("sam2_mode", getSam2());
+  fd.append("file", uploadedFile);
+  fd.append("seg_backend", getBackend());
+  fd.append("sam2_mode", getSam2());
+  fd.append("classifier", getClassifier());
   const r = await fetch("/api/inference/upload", { method: "POST", body: fd });
   const d = await r.json();
   if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
@@ -787,13 +934,37 @@ function displayResults(d) {
 
   showResults(true);
 
+  S.maskCanvas = null;
+  S.maskCtx = null;
+  S.maskDirty = false;
+  S.cursorPos = null;
+
   requestAnimationFrame(() => {
     fitCanvas();
     const sourceImg = new Image();
     sourceImg.onload = () => {
       S.sourceImg = sourceImg;
       const segImg = new Image();
-      segImg.onload = () => { S.segImg = segImg; render(); };
+      segImg.onload = () => {
+        S.segImg = segImg;
+        const mc = document.createElement("canvas");
+        mc.width = S.imgW; mc.height = S.imgH;
+        const mctx = mc.getContext("2d");
+        const editedSrc = d.mask_b64 ? d.mask_b64 : null;
+        if (editedSrc) {
+          const editedImg = new Image();
+          editedImg.onload = () => {
+            mctx.drawImage(editedImg, 0, 0);
+            S.maskCanvas = mc; S.maskCtx = mctx;
+            render();
+          };
+          editedImg.src = "data:image/png;base64," + editedSrc;
+        } else {
+          mctx.drawImage(segImg, 0, 0);
+          S.maskCanvas = mc; S.maskCtx = mctx;
+        }
+        render();
+      };
       segImg.src = "data:image/png;base64," + d.seg_b64;
       render();
     };
@@ -808,7 +979,8 @@ function exportPng() {
   tc.width = S.imgW; tc.height = S.imgH;
   const tctx = tc.getContext("2d");
   tctx.drawImage(S.sourceImg, 0, 0);
-  if (S.segImg) tctx.drawImage(S.segImg, 0, 0);
+  if (S.maskCanvas) tctx.drawImage(S.maskCanvas, 0, 0);
+  else if (S.segImg) tctx.drawImage(S.segImg, 0, 0);
 
   const lw = Math.max(2, S.imgW * 0.004), hs = Math.max(4, S.imgW * 0.008);
   const fs = Math.max(11, S.imgW * 0.02), kr = Math.max(4, S.imgW * 0.007);
@@ -899,19 +1071,24 @@ async function saveToDb() {
   if (!currentRunId) { toast("Aucun run a sauvegarder", "err"); return; }
   $btnSave.disabled = true;
   try {
+    const payload = {
+      boxes: S.boxes,
+      keypoints: S.keypoints,
+      kpt_confs: S.kptConfs,
+      box_confs: S.boxConfs,
+      comments: S.comments,
+    };
+    if (S.maskDirty && S.maskCanvas) {
+      payload.mask_b64 = S.maskCanvas.toDataURL("image/png").split(",", 2)[1];
+    }
     const r = await fetch(`/api/history/${currentRunId}/annotations`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        boxes: S.boxes,
-        keypoints: S.keypoints,
-        kpt_confs: S.kptConfs,
-        box_confs: S.boxConfs,
-        comments: S.comments,
-      }),
+      body: JSON.stringify(payload),
     });
     const d = await r.json();
     if (!r.ok) { toast(d.error || "Erreur", "err"); return; }
+    S.maskDirty = false;
     toast("Sauvegarde OK (run #" + currentRunId + ")");
     loadHistory();
   } catch (e) { toast("Erreur : " + e.message, "err"); }
@@ -971,7 +1148,7 @@ async function deleteRun(id) {
   } catch (e) { toast("Erreur : " + e.message, "err"); }
 }
 
-document.addEventListener("DOMContentLoaded", () => { updateSam2State(); loadDatasets(); loadHistory(); });
+document.addEventListener("DOMContentLoaded", () => { updateSam2State(); loadDatasets(); loadClassifiers(); loadHistory(); });
 </script>
 </body>
 </html>

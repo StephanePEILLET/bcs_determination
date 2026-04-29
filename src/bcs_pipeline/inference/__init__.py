@@ -13,6 +13,8 @@ from bcs_pipeline.inference.classification import (
     get_inference_transform,
     load_class_names,
     load_classification_model,
+    load_combined_class_names,
+    load_oxford_cat_class_names,
     predict_batch,
     predict_single,
 )
@@ -62,6 +64,8 @@ __all__ = [
     "load_model",
     "load_classification_model",
     "load_class_names",
+    "load_combined_class_names",
+    "load_oxford_cat_class_names",
     "get_inference_transform",
     "predict_single",
     "predict_batch",

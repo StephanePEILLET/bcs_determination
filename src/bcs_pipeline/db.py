@@ -17,6 +17,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import Session as SaSession
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -86,6 +88,7 @@ class UserAnnotation(Base):
     kpt_confs = Column(Text, nullable=True)
     box_confs = Column(Text, nullable=True)
     comments = Column(Text, nullable=True)
+    mask_path = Column(String, nullable=True)
 
     run = relationship("InferenceRun", back_populates="annotation")
 
@@ -93,9 +96,22 @@ class UserAnnotation(Base):
 def init_db(db_path: str):
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Base.metadata.create_all(engine)
+    _migrate_schema(engine)
     session_local = sessionmaker(bind=engine)
     logger.info("Database initialized at %s", db_path)
     return engine, session_local
+
+
+def _migrate_schema(engine) -> None:
+    """Add columns added after the initial schema. Idempotent."""
+    inspector = inspect(engine)
+    if "user_annotations" not in inspector.get_table_names():
+        return
+    cols = {c["name"] for c in inspector.get_columns("user_annotations")}
+    if "mask_path" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE user_annotations ADD COLUMN mask_path VARCHAR"))
+        logger.info("Migrated user_annotations: added mask_path column")
 
 
 def save_run(
@@ -150,6 +166,7 @@ def save_annotations(
     kpt_confs: List,
     box_confs: List,
     comments: List,
+    mask_path: Optional[str] = None,
 ) -> Optional[UserAnnotation]:
     run = session.query(InferenceRun).filter(InferenceRun.id == run_id).first()
     if not run:
@@ -165,9 +182,32 @@ def save_annotations(
     ann.kpt_confs = json.dumps(kpt_confs)
     ann.box_confs = json.dumps(box_confs)
     ann.comments = json.dumps(comments)
+    if mask_path is not None:
+        ann.mask_path = mask_path
     ann.updated_at = datetime.now(timezone.utc)
 
     session.commit()
+
+    # Sync the JSON file on disk so it stays consistent with the DB
+    if run.output_path:
+        output_file = Path(run.output_path)
+        if output_file.exists():
+            try:
+                with open(output_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                data["pose_annotations"] = {
+                    "boxes": boxes,
+                    "keypoints": keypoints,
+                    "kpt_confs": kpt_confs,
+                    "box_confs": box_confs,
+                }
+                data["user_comments"] = comments
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+                logger.info("Updated JSON file %s with annotations", output_file.name)
+            except Exception:
+                logger.warning("Could not update JSON file %s", output_file.name, exc_info=True)
+
     logger.info("Saved annotations for run #%d (%d comments)", run_id, len(comments))
     return ann
 
@@ -194,6 +234,7 @@ def load_run(session: SaSession, run_id: int) -> Optional[Dict[str, Any]]:
             "box_confs": json.loads(ann.box_confs) if ann.box_confs else orig.get("box_confs", []),
         }
         data["user_comments"] = json.loads(ann.comments) if ann.comments else []
+        data["mask_path"] = ann.mask_path
 
     data["run_id"] = run.id
     data["saved_at"] = (
@@ -215,6 +256,8 @@ def delete_run(session: SaSession, run_id: int) -> bool:
         return False
     if run.output_path:
         Path(run.output_path).unlink(missing_ok=True)
+    if run.annotation and run.annotation.mask_path:
+        Path(run.annotation.mask_path).unlink(missing_ok=True)
     session.delete(run)
     session.commit()
     return True

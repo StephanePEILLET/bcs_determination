@@ -35,6 +35,7 @@ from bcs_pipeline.data.stanford_classification_datamodule import StanfordClassif
 from bcs_pipeline.data.stanford_segmentation_datamodule import StanfordSegmentationDataModule
 from bcs_pipeline.data.oxford_classification_datamodule import OxfordClassificationDataModule
 from bcs_pipeline.data.oxford_segmentation_datamodule import OxfordSegmentationDataModule
+from bcs_pipeline.data.combined_classification_datamodule import CombinedDogsCatsDataModule
 from bcs_pipeline.lightning_module.classification_module import LitClassificationModule
 from bcs_pipeline.lightning_module.segmentation_module import LitSegmentationModule
 from bcs_pipeline.trainer_factory import build_trainer, get_checkpoint_callback
@@ -140,6 +141,18 @@ def train(cfg: DictConfig) -> float:
                 image_size=cfg.image_size,
                 val_split=cfg.get("val_split", 0.1),
                 seed=cfg.seed,
+            )
+        elif dataset == "combined":
+            data_module = CombinedDogsCatsDataModule(
+                stanford_data_dir=cfg.get("stanford_data_dir", "data/stanford_dogs"),
+                oxford_data_dir=cfg.get("oxford_data_dir", "data/Oxford-IIIT_pet_dataset"),
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                image_size=cfg.image_size,
+                val_split=cfg.get("val_split", 0.1),
+                test_split=cfg.get("test_split", 0.1),
+                seed=cfg.seed,
+                split_dir=str(experiment_dirs["splits"]),
             )
         else:
             data_module = StanfordClassificationDataModule(

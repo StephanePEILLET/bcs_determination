@@ -6,6 +6,8 @@ import logging
 import os
 from typing import Dict, List, Tuple
 
+from bcs_pipeline.utils.device import get_best_device
+
 import numpy as np
 import torch
 from PIL import Image
@@ -42,7 +44,7 @@ def load_segmentation_model(
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_best_device()
 
     logger.info("Loading segmentation model from %s (device=%s)…", checkpoint_path, device)
     model = LitSegmentationModule.load_from_checkpoint(
@@ -146,7 +148,6 @@ def predict_segmentation_with(
     *,
     image_size: int = SEG_IMAGE_SIZE,
     sam2_mode: str = "prompted",
-    sam2_border_width: int = 5,
     pose_result: dict | None = None,
     kpt_threshold: float = 0.3,
     device: torch.device | None = None,
@@ -166,7 +167,6 @@ def predict_segmentation_with(
         return predict_segmentation_sam2(
             handle, image,
             mode=sam2_mode,
-            border_width=sam2_border_width,
             pose_result=pose_result,
             kpt_threshold=kpt_threshold,
         )

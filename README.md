@@ -10,9 +10,16 @@ Le **Body Condition Score** est un indicateur clinique (échelle 1–9) utilisé
 
 Le BCS d'un chien dépend fortement de sa **race** (un Greyhound et un Bulldog n'ont pas la même morphologie), de la **forme de son silhouette** (répartition graisse/muscle visible depuis le dessus et le côté), et de sa **posture**. Le pipeline combine trois piliers complémentaires :
 
-### 1. Classification de race (120 races — Stanford Dogs)
+### 1. Classification de race (jusqu'à 132 races — chiens + chats)
 
 Identifier la race permet d'ajuster les attentes morphologiques : un Whippet naturellement mince ne doit pas être jugé comme un Labrador en sous-poids.
+
+Deux classifieurs sont fournis et **commutables depuis l'UI** :
+
+- **Chiens uniquement** — Stanford Dogs (120 races)
+- **Chiens + Chats** — Stanford Dogs (120 races) + Oxford-IIIT Pet cats only (12 races) = **132 classes** (config `configs/config_dogs_cats.yaml`)
+
+Modèles entraînés :
 
 - **ResNet-50** (ImageNet pretrained, fine-tuned) — val_acc = 0.79
 - **ViT-B/16** (google/vit-base-patch16-224-in21k, fine-tuned) — val_acc = 0.87
@@ -26,9 +33,13 @@ Identifier la race permet d'ajuster les attentes morphologiques : un Whippet nat
 
 Isoler le contour du chien dans l'image permet d'analyser sa **silhouette** : un chien en surpoids présentera un contour plus large au niveau des côtes et de la taille, sans taille marquée vue de dessus.
 
-- **DeepLabV3-ResNet50** (COCO pretrained, fine-tuned) — val_IoU = 0.82
-- 3 classes trimap : *foreground (animal)*, *background*, *border (contour)*
-- Métriques : Pixel Accuracy = 93.7%, mIoU = 0.82, mDice = 0.89
+Deux backends interchangeables :
+
+- **DeepLabV3-ResNet50** (COCO pretrained, fine-tuned) — val_IoU = 0.82, 3 classes trimap (*foreground*, *background*, *border*).
+  Métriques : Pixel Accuracy = 93.7%, mIoU = 0.82, mDice = 0.89.
+- **SAM 2** (zero-shot, 3 modes : `prompted`, `automatic`, `pose_prompted`) — masque à **2 classes** (*foreground*, *background*) directement issu du masque binaire SAM, sans bordure dérivée (silhouette déjà nette).
+
+Le masque est **éditable côté navigateur** (pinceau pour ajouter au foreground, gomme pour repasser au background) et le résultat est persisté en base avec les autres annotations.
 
 ### 3. Détection de pose (OpenPose)
 
@@ -53,7 +64,8 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 | Hyperparamètres | Hydra + Optuna |
 | Logging | TensorBoard (+ W&B optionnel) |
 | Modèles | torchvision (ResNet, DeepLabV3), HuggingFace Transformers (ViT), SAM 2, YOLOv8 |
-| Serveur d'inférence | Flask (UI interactive) |
+| Serveur d'inférence | FastAPI + Uvicorn (UI interactive, édition d'annotations) |
+| Persistance | SQLite via SQLAlchemy (runs + annotations utilisateur) |
 | Container | Docker |
 
 ## Notebooks d'évaluation
@@ -88,7 +100,8 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 ```
 bcs_determination/
 ├── configs/
-│   ├── config.yaml                        # Classification Hydra config
+│   ├── config.yaml                        # Classification Hydra config (Stanford Dogs, 120 races)
+│   ├── config_dogs_cats.yaml              # Classification combinée (132 races, chiens + chats)
 │   └── config_segmentation.yaml           # Segmentation Hydra config
 ├── src/
 │   └── bcs_pipeline/                      # Main Python package
@@ -96,11 +109,12 @@ bcs_determination/
 │       ├── callbacks.py                   # Callback factories
 │       ├── loggers.py                     # Logger factories (TensorBoard, W&B)
 │       ├── trainer_factory.py             # High-level Trainer builder
+│       ├── db.py                          # SQLAlchemy models (runs + annotations + masques édités)
 │       ├── inference/                     # Shared inference utilities
 │       │   ├── __init__.py                # Public API re-exports
-│       │   ├── classification.py          # ResNet/ViT breed prediction
+│       │   ├── classification.py          # ResNet/ViT breed prediction (+ load_combined_class_names)
 │       │   ├── segmentation.py            # DeepLabV3 trimap + backend dispatch
-│       │   ├── segmentation_sam2.py       # SAM 2 zero-shot segmentation
+│       │   ├── segmentation_sam2.py       # SAM 2 zero-shot segmentation (2 classes)
 │       │   ├── pose.py                    # YOLOv8 keypoint detection
 │       │   ├── visualization.py           # PIL overlay rendering
 │       │   └── pipeline.py                # Combined orchestrator
@@ -108,7 +122,8 @@ bcs_determination/
 │       │   ├── stanford_classification_datamodule.py
 │       │   ├── stanford_segmentation_datamodule.py
 │       │   ├── oxford_classification_datamodule.py
-│       │   └── oxford_segmentation_datamodule.py
+│       │   ├── oxford_segmentation_datamodule.py
+│       │   └── combined_classification_datamodule.py   # Stanford dogs + Oxford cats (132 cls)
 │       ├── lightning_module/
 │       │   ├── classification_module.py   # LitClassificationModule
 │       │   └── segmentation_module.py     # LitSegmentationModule
@@ -121,7 +136,7 @@ bcs_determination/
 │           ├── dataset_stats.py
 │           └── logging_utils.py
 ├── templates/
-│   └── index.html                         # Flask UI (single-page)
+│   └── index.html                         # FastAPI UI (single-page) — édition annotations + masque
 ├── notebooks/
 │   ├── combined_inference_overlay.ipynb   # Widget interactif (même logique que l'app)
 │   ├── evaluate_vit_classification_Stanford_Dogs.ipynb
@@ -133,19 +148,23 @@ bcs_determination/
 │   ├── unsupervised_segmentation.ipynb
 │   └── pose_detection.ipynb
 ├── data/
-│   ├── stanford_dogs/                     # 120 breed folders
-│   ├── Oxford-IIIT_pet_dataset/           # Pet images + trimaps
+│   ├── stanford_dogs/                     # 120 breed folders (sous images/Images/)
+│   ├── Oxford-IIIT_pet_dataset/           # Pet images + trimaps (chats utilisés pour le combiné)
 │   ├── Reddit_example/                    # Out-of-distribution webp images
-│   └── Dog_Pose_Estimations/              # YOLOv8 pose training data
+│   ├── Dog_Pose_Estimations/              # YOLOv8 pose training data
+│   ├── outputs/                           # JSON + PNG de chaque run sauvé (run_<id>.json, run_<id>_mask.png)
+│   └── bcs_app.db                         # SQLite — historique des runs et annotations utilisateur
 ├── experiments/                           # Auto-generated (checkpoints, TB logs, splits)
-│   ├── resnet50_adam_cosine_annealing/
+│   ├── resnet50_adam_cosine_annealing/    # Classifieur 120 races (chiens uniquement)
+│   ├── resnet50_dogs_cats/                # Classifieur 132 races (chiens + chats)
 │   ├── vit_adam_cosine_annealing/
 │   └── deeplabv3_resnet50_adam_cosine_annealing/
 ├── checkpoints/                           # SAM 2 foundation model weights
 ├── runs/pose/                             # YOLOv8 pose training outputs
 ├── train.py                               # Training entry-point
 ├── inference.py                           # CLI inference
-├── app.py                                 # Flask web app (UI interactive)
+├── app.py                                 # FastAPI/Uvicorn web app (UI interactive)
+├── setup_and_run.sh                       # Bootstrap : uv venv + données + checkpoints + lancement
 ├── environment.yaml
 ├── Dockerfile
 └── README.md
@@ -164,43 +183,55 @@ bcs_determination/
 
 ## Setup & Installation
 
-### 1. Create the Conda environment
+### Option A — Bootstrap automatique (recommandé)
+
+Le script `setup_and_run.sh` installe `uv` (gestionnaire d'environnement
+Python rapide), crée le venv `.venv/`, télécharge les datasets (Stanford
+Dogs, Oxford-IIIT Pet) et le checkpoint SAM 2, puis lance l'application :
+
+```bash
+chmod +x setup_and_run.sh
+./setup_and_run.sh                  # tout faire
+./setup_and_run.sh --skip-data      # passer le téléchargement des données
+./setup_and_run.sh --skip-env       # réutiliser .venv/ existant
+./setup_and_run.sh --no-launch      # arrêter avant de lancer l'app
+```
+
+### Option B — Conda manuel
 
 ```bash
 conda env create -f environment.yaml
 conda activate bcs_analysis
 ```
 
-> **Note:** The `environment.yaml` includes heavy `pip` dependencies. Conda
-> installs these silently, so the installation may appear frozen for 5-10
-> minutes. Please be patient and **do not** interrupt (`Ctrl+C`) the process.
+> **Note:** L'`environment.yaml` inclut de lourdes dépendances `pip` que
+> Conda installe silencieusement — l'installation peut sembler figée
+> 5–10 min. Ne pas interrompre (`Ctrl+C`).
 
-### 2. Verify the install
+### Vérification
 
 ```bash
 python -c "import pytorch_lightning; print(pytorch_lightning.__version__)"
 python -c "from torch.utils.tensorboard import SummaryWriter; print('TensorBoard OK')"
 ```
 
-### 3. Data preparation
+### Préparation des données (si Option B)
 
-**Classification (Stanford Dogs)**
+**Classification — Stanford Dogs**
 
-Download the Stanford Dogs Dataset and extract it so the directory tree looks
-like:
+Le `setup_and_run.sh` télécharge l'archive et l'extrait dans
+`data/stanford_dogs/images/Images/`. Si vous installez à la main,
+respectez cette structure :
 
 ```
-data/Stanford_dogs/
+data/stanford_dogs/images/
 └── Images/
     ├── n02085620-Chihuahua/
     ├── n02085782-Japanese_spaniel/
     └── ...  (120 breed folders)
 ```
 
-> **Tip:** If you point `data_dir` to the correct location the
-> `StanfordClassificationDataModule` will auto-download and extract the dataset.
-
-**Segmentation (Oxford-IIIT Pet)**
+**Segmentation / Cats — Oxford-IIIT Pet**
 
 ```
 data/Oxford-IIIT_pet_dataset/
@@ -208,6 +239,9 @@ data/Oxford-IIIT_pet_dataset/
 │   ├── Abyssinian_1.jpg
 │   └── ...
 └── annotations/
+    ├── list.txt          # utilisé pour filtrer SPECIES=1 (chats)
+    ├── trainval.txt
+    ├── test.txt
     └── trimaps/
         ├── Abyssinian_1.png
         └── ...

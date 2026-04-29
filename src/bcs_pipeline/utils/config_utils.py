@@ -77,16 +77,19 @@ def validate_config(cfg: DictConfig) -> bool:
 def get_experiment_name(cfg: DictConfig) -> str:
     """Derive a deterministic experiment name from the config.
 
-    Parameters
-    ----------
-    cfg:
-        Hydra config.
+    If the config defines an explicit ``experiment_name`` field it takes
+    precedence; otherwise the name is derived from
+    ``{model_name}_{optimizer_name}_{scheduler_name}``.
 
     Returns
     -------
     str
-        e.g. ``"resnet50_adam_cosine_annealing"``.
+        e.g. ``"resnet50_adam_cosine_annealing"`` or
+        ``"resnet50_dogs_cats"``.
     """
+    explicit = cfg.get("experiment_name", None) if hasattr(cfg, "get") else None
+    if explicit:
+        return str(explicit)
     return f"{cfg.model_name}_{cfg.optimizer_name}_{cfg.scheduler_config['name']}"
 
 

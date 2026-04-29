@@ -6,6 +6,8 @@ import logging
 import os
 from typing import Dict, List, Optional
 
+from bcs_pipeline.utils.device import get_best_device
+
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -59,7 +61,7 @@ def load_classification_model(
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_best_device()
 
     logger.info("Loading classification model from %s (device=%s)…", checkpoint_path, device)
 
@@ -96,6 +98,48 @@ def load_class_names(data_dir: str) -> Optional[List[str]]:
     clean = ["-".join(c.split("-")[1:]) for c in classes]
     logger.debug("Loaded %d class names from %s", len(clean), images_dir)
     return clean
+
+
+def load_oxford_cat_class_names(oxford_dir: str) -> Optional[List[str]]:
+    """Return the alphabetically-sorted list of Oxford-IIIT Pet **cat** breeds.
+
+    Parses ``annotations/list.txt`` and keeps only entries with SPECIES=1.
+    The breed name is derived from the image filename (``Bengal_42`` →
+    ``Bengal``).
+    """
+    list_path = os.path.join(oxford_dir, "annotations", "list.txt")
+    if not os.path.isfile(list_path):
+        logger.warning("Oxford list.txt not found: %s", list_path)
+        return None
+
+    breeds = set()
+    with open(list_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(" ")
+            if len(parts) < 3 or parts[2] != "1":
+                continue
+            breeds.add(parts[0].rsplit("_", 1)[0])
+    return sorted(breeds)
+
+
+def load_combined_class_names(
+    stanford_data_dir: str,
+    oxford_data_dir: str,
+) -> Optional[List[str]]:
+    """Return the 132 class names of the combined dogs+cats classifier.
+
+    The order matches :class:`CombinedDogsCatsDataModule`:
+    Stanford dog breeds (sorted, prefix-stripped) followed by Oxford cat
+    breeds (alphabetical).
+    """
+    dogs = load_class_names(stanford_data_dir)
+    cats = load_oxford_cat_class_names(oxford_data_dir)
+    if dogs is None or cats is None:
+        return None
+    return list(dogs) + list(cats)
 
 
 def get_inference_transform(image_size: int = 224) -> transforms.Compose:

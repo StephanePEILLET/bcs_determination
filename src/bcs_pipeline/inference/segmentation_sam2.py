@@ -17,9 +17,9 @@ Three modes are exposed:
   keypoints act as positive points inside the subject. Most accurate when the
   pose model has high-confidence detections.
 
-The binary SAM 2 mask is post-processed into a 3-class trimap
-(0=foreground, 1=background, 2=border) compatible with the DeepLabV3 output,
-so the downstream visualization stays unchanged.
+The binary SAM 2 mask is exposed directly as a 2-class map
+(0=foreground, 1=background). Unlike DeepLabV3, no border class is derived
+since the SAM 2 silhouette is already pixel-accurate.
 """
 
 from __future__ import annotations
@@ -28,10 +28,11 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
+from bcs_pipeline.utils.device import get_best_device
+
 import numpy as np
 import torch
 from PIL import Image
-from scipy import ndimage as ndi
 
 logger = logging.getLogger("bcs_pipeline")
 
@@ -58,7 +59,7 @@ def load_sam2_model(
     from sam2.sam2_image_predictor import SAM2ImagePredictor
 
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_best_device()
 
     logger.info("Loading SAM2 model from %s (device=%s)…", checkpoint_path, device)
     sam2_model = build_sam2(config_path, checkpoint_path, device=device)
@@ -159,26 +160,22 @@ def _sam2_automatic(handle: Dict[str, Any], image: Image.Image) -> np.ndarray:
     return np.asarray(best_m, dtype=bool)
 
 
-def sam2_mask_to_trimap(binary_mask: np.ndarray, border_width: int = 5) -> np.ndarray:
-    """Convert a boolean SAM2 mask into a 3-class trimap.
+def sam2_mask_to_trimap(binary_mask: np.ndarray) -> np.ndarray:
+    """Convert a boolean SAM2 mask into a 2-class map.
 
-    Output convention matches DeepLabV3:
-    ``0 = foreground``, ``1 = background``, ``2 = border``.
+    ``0 = foreground``, ``1 = background``. The DeepLabV3 border class is
+    intentionally not produced for SAM 2 — the silhouette is already crisp.
     """
     binary_mask = np.asarray(binary_mask, dtype=bool)
-    trimap = np.ones(binary_mask.shape, dtype=np.int64)
-    trimap[binary_mask] = 0
-    eroded = ndi.binary_erosion(binary_mask, iterations=border_width)
-    border = binary_mask & ~eroded
-    trimap[border] = 2
-    return trimap
+    out = np.ones(binary_mask.shape, dtype=np.int64)
+    out[binary_mask] = 0
+    return out
 
 
 def predict_segmentation_sam2(
     handle: Dict[str, Any],
     image: Image.Image,
     mode: str = "prompted",
-    border_width: int = 5,
     pose_result: Optional[Dict[str, Any]] = None,
     kpt_threshold: float = 0.3,
 ) -> Dict[str, Any]:
@@ -202,11 +199,11 @@ def predict_segmentation_sam2(
             "Use 'prompted', 'automatic' or 'pose_prompted'."
         )
 
-    trimap = sam2_mask_to_trimap(binary, border_width=border_width)
+    mask = sam2_mask_to_trimap(binary)
     return {
-        "mask": trimap,
-        "mask_small": trimap,  # SAM2 already produces full-resolution masks
-        "num_classes": 3,
+        "mask": mask,
+        "mask_small": mask,  # SAM2 already produces full-resolution masks
+        "num_classes": 2,
         "binary_mask": binary,
         "backend": f"sam2_{mode}",
     }
