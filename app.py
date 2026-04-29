@@ -5,7 +5,8 @@ select a dataset, breed group, image, segmentation backend and SAM 2 mode,
 then run the three pipelines (classification, segmentation, pose) and
 visualise the combined overlay side-by-side with the source image.
 
-Supports uploading a custom image and exporting the overlay as PNG.
+Supports uploading a custom image, exporting the overlay as PNG / JSON,
+and persisting results to an SQLite database.
 
 Usage
 -----
@@ -23,6 +24,7 @@ import base64
 import io
 import logging
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -37,6 +39,14 @@ from starlette.responses import HTMLResponse
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from bcs_pipeline.db import (
+    delete_run as db_delete_run,
+    init_db,
+    list_runs as db_list_runs,
+    load_run as db_load_run,
+    save_annotations as db_save_annotations,
+    save_run as db_save_run,
+)
 from bcs_pipeline.inference import (
     load_classification_model,
     load_class_names,
@@ -69,8 +79,10 @@ STANFORD_IMAGES = STANFORD_ROOT / "Images"
 OXFORD_IMAGES = REPO_ROOT / "data/Oxford-IIIT_pet_dataset/images"
 REDDIT_DIR = REPO_ROOT / "data/Reddit_example"
 
-app = FastAPI(title="Body Pawsitive", docs_url=None, redoc_url=None)
-templates = Jinja2Templates(directory=str(REPO_ROOT / "templates"))
+OUTPUT_DIR = REPO_ROOT / "data" / "outputs"
+
+_DB_ENGINE = None
+_DB_SESSION = None
 
 _MODELS: dict = {
     "cls": None,
@@ -78,6 +90,24 @@ _MODELS: dict = {
     "seg": {},
     "pose": None,
 }
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    global _DB_ENGINE, _DB_SESSION
+    db_path = str(REPO_ROOT / "data" / "bcs_app.db")
+    _DB_ENGINE, _DB_SESSION = init_db(db_path)
+    yield
+    if _DB_ENGINE:
+        _DB_ENGINE.dispose()
+
+
+app = FastAPI(title="Body Pawsitive", docs_url=None, redoc_url=None, lifespan=_lifespan)
+templates = Jinja2Templates(directory=str(REPO_ROOT / "templates"))
+
+
+def _db():
+    return _DB_SESSION()
 
 
 def _ensure_classifier():
@@ -327,6 +357,21 @@ async def api_inference(request: Request):
             conf_threshold=conf_threshold,
         )
         result["ground_truth"] = _ground_truth(dataset, group)
+
+        session = _db()
+        try:
+            run = db_save_run(
+                session, OUTPUT_DIR, result,
+                source_type="dataset", dataset=dataset, group_name=group,
+                ground_truth=result["ground_truth"],
+                seg_backend=seg_backend, sam2_mode=sam2_mode,
+            )
+            result["run_id"] = run.id
+        except Exception:
+            logger.exception("Failed to save run to DB")
+        finally:
+            session.close()
+
         return result
     except Exception as exc:
         logger.exception("Inference failed for %s", image_path)
@@ -358,10 +403,80 @@ async def api_inference_upload(
             conf_threshold=float(conf_threshold),
         )
         result["ground_truth"] = None
+
+        session = _db()
+        try:
+            run = db_save_run(
+                session, OUTPUT_DIR, result,
+                source_type="upload", seg_backend=seg_backend, sam2_mode=sam2_mode,
+            )
+            result["run_id"] = run.id
+        except Exception:
+            logger.exception("Failed to save upload run to DB")
+        finally:
+            session.close()
+
         return result
     except Exception as exc:
         logger.exception("Upload inference failed for %s", file.filename)
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/history")
+def api_history(limit: int = Query(50)):
+    session = _db()
+    try:
+        return db_list_runs(session, limit=limit)
+    finally:
+        session.close()
+
+
+@app.get("/api/history/{run_id}")
+def api_history_detail(run_id: int):
+    session = _db()
+    try:
+        data = db_load_run(session, run_id)
+        if data is None:
+            return JSONResponse({"error": "Run not found"}, status_code=404)
+        return data
+    finally:
+        session.close()
+
+
+@app.post("/api/history/{run_id}/annotations")
+async def api_save_annotations(run_id: int, request: Request):
+    body = await request.json()
+    session = _db()
+    try:
+        ann = db_save_annotations(
+            session,
+            run_id,
+            boxes=body.get("boxes", []),
+            keypoints=body.get("keypoints", []),
+            kpt_confs=body.get("kpt_confs", []),
+            box_confs=body.get("box_confs", []),
+            comments=body.get("comments", []),
+        )
+        if ann is None:
+            return JSONResponse({"error": "Run not found"}, status_code=404)
+        return {"status": "ok", "run_id": run_id}
+    except Exception as exc:
+        logger.exception("Failed to save annotations for run %d", run_id)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    finally:
+        session.close()
+
+
+@app.delete("/api/history/{run_id}")
+def api_delete_history(run_id: int):
+    session = _db()
+    try:
+        ok = db_delete_run(session, run_id)
+        if not ok:
+            return JSONResponse({"error": "Run not found"}, status_code=404)
+        return {"status": "deleted"}
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
