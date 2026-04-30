@@ -5,6 +5,7 @@
 /experiments/
 
 # PyTorch & Machine Learning Checkpoints
+checkpoints/
 *.ckpt
 *.pt
 *.pth
