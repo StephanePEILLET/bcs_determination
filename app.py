@@ -117,7 +117,7 @@ def _resolve_dogs_cats_ckpt() -> Optional[Path]:
     """Locate a trained dogs+cats checkpoint.
 
     Prefers ``last.ckpt`` if present, otherwise picks the most recently
-    modified ``*.ckpt`` under ``experiments/resnet50_dogs_cats/checkpoints/``.
+    modified ``*.ckpt`` under ``checkpoints/classification/resnet50_dogs_cats/``.
     Returns ``None`` when no checkpoint has been produced yet.
     """
     if not DOGS_CATS_CKPT_DIR.is_dir():

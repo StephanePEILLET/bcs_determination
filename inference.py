@@ -30,15 +30,6 @@ Usage
         --pose_checkpoint checkpoints/pose/yolo_best.pt \
         --output outputs/photo_full.png \
         --data_dir data/stanford_dogs
-
-    # Combined visualization
-    python inference.py --mode full \\
-        --image_path data/Reddit_example/photo.webp \\
-        --checkpoint_path experiments/resnet50.../best.ckpt \\
-        --seg_checkpoint experiments/deeplabv3.../last-v1.ckpt \\
-        --pose_checkpoint runs/pose/train/weights/best.pt \\
-        --output outputs/photo_full.png \\
-        --data_dir data/stanford_dogs
 """
 
 import argparse

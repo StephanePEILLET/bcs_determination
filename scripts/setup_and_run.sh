@@ -31,7 +31,8 @@ error()   { echo -e "${RED}[FAIL]${NC}  $*"; }
 section() { echo -e "\n${CYAN}${BOLD}━━━ $* ━━━${NC}\n"; }
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Navigate to the project root (parent of scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 PYTHON_VERSION="3.10"
@@ -56,14 +57,22 @@ GPU_TYPE="cpu"
 SKIP_DATA=false
 SKIP_ENV=false
 NO_LAUNCH=false
+FORCE_CPU=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-data)  SKIP_DATA=true; shift ;;
         --skip-env)   SKIP_ENV=true; shift ;;
         --no-launch)  NO_LAUNCH=true; shift ;;
+        --cpu)        FORCE_CPU=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--skip-data] [--skip-env] [--no-launch]"
+            echo "Usage: $0 [--skip-data] [--skip-env] [--no-launch] [--cpu]"
+            echo ""
+            echo "Options:"
+            echo "  --skip-data   Passer le téléchargement des données"
+            echo "  --skip-env    Passer l'installation de l'environnement"
+            echo "  --no-launch   Ne pas lancer l'app à la fin"
+            echo "  --cpu         Forcer l'exécution sur CPU (ignore GPU)"
             exit 0 ;;
         *)
             error "Argument inconnu : $1"; exit 1 ;;
@@ -76,15 +85,24 @@ done
 detect_gpu() {
     section "Détection du matériel"
 
+    # --cpu force le mode CPU
+    if [[ "$FORCE_CPU" == true ]]; then
+        GPU_TYPE="cpu"
+        export BCS_DEVICE="cpu"
+        info "Mode CPU forcé via ${BOLD}--cpu${NC}"
+        warn "Les modèles tourneront sur CPU (plus lent mais compatible partout)"
+        return
+    fi
+
     # 1. Vérifier NVIDIA CUDA
     if command -v nvidia-smi &>/dev/null; then
         local gpu_name
         gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
         if [[ -n "$gpu_name" ]]; then
             GPU_TYPE="cuda"
+            export BCS_DEVICE="cuda"
             success "GPU NVIDIA détecté : ${BOLD}$gpu_name${NC}"
 
-            # Détecter la version CUDA pour choisir le bon index PyTorch
             local cuda_version
             cuda_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
             info "Driver NVIDIA : $cuda_version"
@@ -98,15 +116,18 @@ detect_gpu() {
         chip=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "")
         if [[ "$chip" == *"Apple"* ]]; then
             GPU_TYPE="mps"
+            export BCS_DEVICE="mps"
             success "GPU Apple Silicon détecté : ${BOLD}$chip${NC}"
             info "Le backend MPS (Metal Performance Shaders) sera utilisé"
             return
         fi
     fi
 
-    # 3. Fallback CPU
+    # 3. Fallback CPU — aucun GPU détecté
     GPU_TYPE="cpu"
-    warn "Aucun GPU détecté — le modèle tournera sur CPU (plus lent)"
+    export BCS_DEVICE="cpu"
+    warn "Aucun GPU détecté — l'application tournera sur CPU"
+    info "Utilisez ${BOLD}--cpu${NC} pour supprimer cet avertissement"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -332,9 +353,10 @@ download_data() {
 
     # ── Checkpoints entraînés ────────────────────────────────────────────────
     echo ""
-    local cls_ckpt="experiments/resnet50_adam_cosine_annealing/checkpoints/epoch=epoch=15-val_acc=val_acc=0.79-step=8240.ckpt"
-    local seg_ckpt="experiments/deeplabv3_resnet50_adam_cosine_annealing/checkpoints/last-v1.ckpt"
-    local pose_ckpt="runs/pose/train/weights/best.pt"
+    # Paths matching app.py constants
+    local cls_ckpt="checkpoints/classification/resnet50_epoch15_valacc0.79.ckpt"
+    local seg_ckpt="checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt"
+    local pose_ckpt="checkpoints/pose/yolo_best.pt"
 
     [[ -f "$cls_ckpt" ]]  && success "Classification checkpoint OK"  || warn "Classification checkpoint manquant (entraînement requis)"
     [[ -f "$seg_ckpt" ]]  && success "Segmentation checkpoint OK"    || warn "Segmentation checkpoint manquant (entraînement requis)"
