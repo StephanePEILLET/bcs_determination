@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import base64
+
 from sqlalchemy import (
     Column,
     DateTime,
@@ -234,7 +236,9 @@ def load_run(session: SaSession, run_id: int) -> Optional[Dict[str, Any]]:
             "box_confs": json.loads(ann.box_confs) if ann.box_confs else orig.get("box_confs", []),
         }
         data["user_comments"] = json.loads(ann.comments) if ann.comments else []
-        data["mask_path"] = ann.mask_path
+        if ann.mask_path and Path(ann.mask_path).exists():
+            with open(ann.mask_path, "rb") as mf:
+                data["mask_b64"] = base64.b64encode(mf.read()).decode("ascii")
 
     data["run_id"] = run.id
     data["saved_at"] = (

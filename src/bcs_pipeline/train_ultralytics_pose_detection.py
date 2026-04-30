@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-def train_pose_model(data_path="dog-pose.yaml", model_path="yolo26n-pose.pt", epochs=20, imgsz=640):
+def train_pose_model(data_path="dog-pose.yaml", model_path="checkpoints/pose/yolo26n-pose.pt", epochs=20, imgsz=640):
     # Load a model
     model = YOLO(model_path)  # load a pretrained model (recommended for training)
 

@@ -67,14 +67,11 @@ logger = logging.getLogger("bcs_app")
 
 REPO_ROOT = Path(__file__).parent.resolve()
 
-CLASSIFICATION_CKPT = (
-    REPO_ROOT
-    / "experiments/resnet50_adam_cosine_annealing/checkpoints/epoch=epoch=15-val_acc=val_acc=0.79-step=8240.ckpt"
-)
-DOGS_CATS_CKPT_DIR = REPO_ROOT / "experiments/resnet50_dogs_cats/checkpoints"
-DEEPLAB_CKPT = REPO_ROOT / "experiments/deeplabv3_resnet50_adam_cosine_annealing/checkpoints/last-v1.ckpt"
+CLASSIFICATION_CKPT = REPO_ROOT / "checkpoints/classification/resnet50_epoch15_valacc0.79.ckpt"
+DOGS_CATS_CKPT_DIR = REPO_ROOT / "checkpoints/classification/resnet50_dogs_cats"
+DEEPLAB_CKPT = REPO_ROOT / "checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt"
 SAM2_CKPT = REPO_ROOT / "checkpoints/sam2.1_hiera_large.pt"
-POSE_CKPT = REPO_ROOT / "runs/pose/train/weights/best.pt"
+POSE_CKPT = REPO_ROOT / "checkpoints/pose/yolo_best.pt"
 
 STANFORD_ROOT = REPO_ROOT / "data/stanford_dogs/images"
 STANFORD_IMAGES = STANFORD_ROOT / "Images"

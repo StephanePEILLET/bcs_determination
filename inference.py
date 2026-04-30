@@ -17,9 +17,18 @@ Usage
 .. code-block:: bash
 
     # Classify only
-    python inference.py \\
-        --image_path sample_dog.jpg \\
-        --checkpoint_path experiments/.../checkpoints/best.ckpt \\
+    python inference.py \
+        --image_path sample_dog.jpg \
+        --checkpoint_path checkpoints/classification/resnet50_epoch15_valacc0.79.ckpt \
+        --data_dir data/stanford_dogs
+
+    # Combined visualization
+    python inference.py --mode full \
+        --image_path data/Reddit_example/photo.webp \
+        --checkpoint_path checkpoints/classification/resnet50_epoch15_valacc0.79.ckpt \
+        --seg_checkpoint checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt \
+        --pose_checkpoint checkpoints/pose/yolo_best.pt \
+        --output outputs/photo_full.png \
         --data_dir data/stanford_dogs
 
     # Combined visualization

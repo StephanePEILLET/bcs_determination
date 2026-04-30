@@ -99,15 +99,41 @@
   }
   .canvas-wrap canvas { display: block; }
 
-  .comment-popup {
-    position: absolute; display: none; z-index: 20;
-    transform: translate(8px, -50%);
+  .comments-panel {
+    border-top: 1px solid #e5e7eb; padding: 12px 16px; background: #fafbfc;
   }
-  .comment-popup input {
-    padding: 5px 8px; border: 2px solid #3b82f6; border-radius: 6px;
-    font-size: 13px; width: 200px; outline: none; background: #fff;
-    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  .comments-panel h4 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    color: #6b7280; margin-bottom: 8px;
   }
+  .comments-panel .comment-form {
+    display: flex; gap: 6px; margin-bottom: 8px;
+  }
+  .comments-panel .comment-form input {
+    flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+    font-size: 13px; outline: none; background: #fff;
+  }
+  .comments-panel .comment-form input:focus { border-color: #3b82f6; }
+  .comments-panel .comment-form input.tool-active { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+  .comments-panel .comment-form .add-btn {
+    padding: 6px 14px; border: none; border-radius: 6px; background: #10b981;
+    color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .comments-panel .comment-form .add-btn:hover { background: #059669; }
+  .comments-panel .comment-form .add-btn:disabled { background: #6ee7b7; cursor: not-allowed; }
+  .comments-list { display: flex; flex-direction: column; gap: 4px; }
+  .comments-list .comment-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 6px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+    font-size: 13px; color: #1f2937;
+  }
+  .comments-list .comment-item .ci-text { flex: 1; word-break: break-word; }
+  .comments-list .comment-item .ci-del {
+    border: none; background: transparent; cursor: pointer; color: #ef4444;
+    font-size: 16px; line-height: 1; padding: 0 4px;
+  }
+  .comments-list .comment-item .ci-del:hover { color: #b91c1c; }
+  .comments-empty { color: #9ca3af; font-size: 12px; font-style: italic; }
 
   .breed-label {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -119,15 +145,50 @@
   .breed-label .label-tag { font-size: 11px; opacity: .6; margin-right: 4px; text-transform: uppercase; letter-spacing: .5px; }
 
   .observations { background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .observations h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
-  .obs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .observations h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+  .obs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
   .obs-section { font-size: 14px; }
-  .obs-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: #6b7280; margin-bottom: 8px; }
-  .obs-section ul { list-style: none; }
-  .obs-section li { padding: 3px 0; display: flex; justify-content: space-between; }
-  .obs-section li .bar { display: block; height: 6px; border-radius: 3px; margin-top: 4px; }
-  .obs-section .stat { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-  .obs-section .stat .bar { display: inline-block; height: 8px; border-radius: 4px; }
+  .obs-section h4 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #6b7280;
+    margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;
+  }
+
+  .obs-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 0 12px;
+    align-items: center; padding: 5px 0;
+  }
+  .obs-row .obs-label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .obs-row .obs-rank {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 4px; font-size: 11px;
+    font-weight: 700; flex-shrink: 0;
+  }
+  .obs-row .obs-rank.r1 { background: #3b82f6; color: #fff; }
+  .obs-row .obs-rank.rn { background: #e2e8f0; color: #64748b; }
+
+  .obs-bar-wrap {
+    display: flex; align-items: center; gap: 8px; grid-column: 1 / -1;
+    margin-top: 2px;
+  }
+  .obs-bar {
+    flex: 1; height: 6px; border-radius: 3px; background: #f1f5f9; overflow: hidden;
+  }
+  .obs-bar .obs-bar-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+  .obs-val {
+    font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+    text-align: right; min-width: 52px; color: #374151; white-space: nowrap;
+  }
+
+  .obs-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; padding: 4px 0; }
+  .obs-kv .k { color: #6b7280; }
+  .obs-kv .v { font-weight: 600; color: #1a1a2e; text-align: right; }
+
+  .seg-legend { display: flex; gap: 14px; margin-top: 8px; }
+  .seg-legend .leg { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #6b7280; }
+  .seg-legend .leg .dot { width: 8px; height: 8px; border-radius: 2px; }
 
   .spinner { display: none; text-align: center; padding: 60px 0; color: #6b7280; font-size: 15px; }
   .spinner.active { display: block; }
@@ -146,9 +207,15 @@
   }
   .hint-bar.active { display: block; }
 
-  .btn-save { background: #10b981; color: #fff; display: none; }
+  .btn-save { background: #10b981; color: #fff; display: none; position: relative; }
   .btn-save:hover { background: #059669; }
   .btn-save:disabled { background: #6ee7b7; cursor: not-allowed; }
+  .btn-save.dirty { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.25); }
+  .btn-save.dirty:hover { background: #d97706; }
+  .btn-save.dirty::after {
+    content: ""; position: absolute; top: 4px; right: 4px;
+    width: 8px; height: 8px; border-radius: 50%; background: #fff;
+  }
 
   .history { margin-top: 24px; background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   .history h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
@@ -251,9 +318,11 @@
     <label class="toggle"><input type="checkbox" id="chk-boxes" checked><span class="swatch" style="background:#32ff32;"></span>Boxes</label>
     <label class="toggle"><input type="checkbox" id="chk-keypoints" checked><span class="swatch" style="background:#ff00ff;"></span>Keypoints</label>
     <span class="spacer"></span>
-    <button class="btn btn-save" id="btn-save">&#128190;&ensp;Sauvegarder</button>
+    <button class="btn btn-save" id="btn-save" title="Sauvegarder dans la base de donn&eacute;es">&#128190;&ensp;Sauvegarder</button>
     <button class="btn btn-export" id="btn-export-png" title="T&eacute;l&eacute;charger l'overlay en PNG">&#11015;&#xFE0E; PNG</button>
     <button class="btn btn-export" id="btn-export-json" title="Exporter les annotations en JSON">&#11015;&#xFE0E; JSON</button>
+    <button class="btn btn-export" id="btn-import-json" title="Importer un fichier JSON d'annotations">&#11014;&#xFE0E; JSON</button>
+    <input type="file" id="import-json-file" accept="application/json,.json" style="display:none;">
     <button class="btn" id="btn-run">&#9654;&ensp;Lancer l'inf&eacute;rence</button>
   </div>
 
@@ -277,24 +346,29 @@
         </div>
         <div class="canvas-wrap" id="canvas-wrap">
           <canvas id="editor-canvas"></canvas>
-          <div class="comment-popup" id="comment-popup">
-            <input type="text" id="comment-input" placeholder="Votre commentaire&hellip;">
-          </div>
         </div>
         <div class="hint-bar" id="hint-bar">
-          Cliquer/glisser les keypoints et les coins des boxes pour les d&eacute;placer. Double-cliquer un commentaire pour le supprimer.
+          Cliquer/glisser les keypoints et les coins des boxes pour les d&eacute;placer.
         </div>
         <div class="breed-label" id="overlay-breed">
           <span class="label-tag">Pr&eacute;diction</span>
           <span class="breed-name" id="breed-name-ovr">&mdash;</span>
           <span class="breed-conf" id="breed-conf-ovr"></span>
         </div>
+        <div class="comments-panel" id="comments-panel" style="display:none;">
+          <h4>Commentaires</h4>
+          <div class="comment-form">
+            <input type="text" id="comment-input" placeholder="Saisir un commentaire sur cette inf&eacute;rence&hellip;">
+            <button type="button" class="add-btn" id="comment-add" title="Ajouter (Entr&eacute;e)">OK</button>
+          </div>
+          <div class="comments-list" id="comments-list"></div>
+        </div>
       </div>
     </div>
     <div class="observations">
       <h3>Observations</h3>
       <div class="obs-grid">
-        <div class="obs-section"><h4>Classification (top-5 races)</h4><ul id="obs-topk"></ul></div>
+        <div class="obs-section"><h4>Classification (top-5 races)</h4><div id="obs-topk"></div></div>
         <div class="obs-section"><h4>Segmentation</h4><div id="obs-seg"></div></div>
         <div class="obs-section"><h4>Pose</h4><div id="obs-pose"></div></div>
       </div>
@@ -318,6 +392,7 @@ const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up");
 const $classifier=$("sel-classifier"), $classifierUp=$("sel-classifier-up");
 const $chkSeg=$("chk-seg"), $chkBox=$("chk-boxes"), $chkKpt=$("chk-keypoints");
 const $btnRun=$("btn-run"), $btnPng=$("btn-export-png"), $btnJson=$("btn-export-json"), $btnSave=$("btn-save");
+const $btnImport=$("btn-import-json"), $importFile=$("import-json-file");
 const $spinner=$("spinner"), $error=$("error-msg"), $results=$("results");
 const $srcImg=$("img-source");
 const $ovrBadge=$("overlay-badge"), $gtName=$("gt-name"), $srcBreed=$("source-breed");
@@ -325,7 +400,7 @@ const $breedOvr=$("breed-name-ovr"), $confOvr=$("breed-conf-ovr");
 const $topk=$("obs-topk"), $segObs=$("obs-seg"), $poseObs=$("obs-pose");
 const $dropZone=$("drop-zone"), $fileInput=$("file-input"), $dzText=$("dz-text"), $dzPreview=$("dz-preview");
 const $canvas=$("editor-canvas"), $canvasWrap=$("canvas-wrap");
-const $commentPopup=$("comment-popup"), $commentInput=$("comment-input");
+const $commentInput=$("comment-input"), $commentAdd=$("comment-add"), $commentsList=$("comments-list"), $commentsPanel=$("comments-panel");
 const $hintBar=$("hint-bar"), $histContent=$("history-content"), $toast=$("toast");
 const ctx = $canvas.getContext("2d");
 
@@ -349,7 +424,6 @@ const S = {
   showKpts: true,
   tool: "move",
   drag: null,
-  pendingComment: null,
   imageName: "",
   imageSize: [],
   groundTruth: null,
@@ -359,9 +433,24 @@ const S = {
   maskCanvas: null,
   maskCtx: null,
   maskDirty: false,
+  strokeCanvas: null,
+  strokeCtx: null,
   brushSize: 30,
   cursorPos: null,
+  dirty: false,
 };
+
+function markDirty() {
+  S.dirty = true;
+  if ($btnSave) $btnSave.classList.add("dirty");
+}
+function clearDirty() {
+  S.dirty = false;
+  S.maskDirty = false;
+  if ($btnSave) $btnSave.classList.remove("dirty");
+}
+const BRUSH_RGB = "0,200,0";
+const BRUSH_ALPHA = 0.4;
 const $brushSize = $("brush-size");
 const $brushSizeVal = $("brush-size-val");
 const $brushSizeWrap = $("brush-size-wrap");
@@ -395,9 +484,10 @@ function showError(msg) { $error.textContent = msg; $error.classList.add("active
 function hideError() { $error.classList.remove("active"); }
 function showResults(v) {
   $results.classList.toggle("active", v);
-  $btnPng.style.display = v ? "" : "none";
-  $btnJson.style.display = v ? "" : "none";
-  $btnSave.style.display = v ? "" : "none";
+  $btnPng.style.display = v ? "inline-block" : "none";
+  $btnJson.style.display = v ? "inline-block" : "none";
+  $btnImport.style.display = v ? "inline-block" : "none";
+  $btnSave.style.display = v ? "inline-block" : "none";
   $hintBar.classList.toggle("active", v);
 }
 function getBackend() { return activeTab === "tab-upload" ? $backendUp.value : $backend.value; }
@@ -432,8 +522,7 @@ async function loadClassifiers() {
 
 /* ── Tool mode ───────────────────────────────────────── */
 function setCursorForTool() {
-  if (S.tool === "comment") $canvas.style.cursor = "crosshair";
-  else if (S.tool === "brush" || S.tool === "eraser") $canvas.style.cursor = "none";
+  if (S.tool === "brush" || S.tool === "eraser") $canvas.style.cursor = "none";
   else $canvas.style.cursor = "default";
 }
 document.querySelectorAll(".tool-btn").forEach(btn => {
@@ -444,6 +533,14 @@ document.querySelectorAll(".tool-btn").forEach(btn => {
     $brushSizeWrap.style.display = isPaint ? "inline-flex" : "none";
     if (!isPaint) S.cursorPos = null;
     setCursorForTool();
+    if (S.tool === "comment") {
+      $commentsPanel.style.display = "";
+      $commentInput.classList.add("tool-active");
+      requestAnimationFrame(() => $commentInput.focus());
+    } else {
+      $commentsPanel.style.display = "none";
+      $commentInput.classList.remove("tool-active");
+    }
     render();
   });
 });
@@ -492,10 +589,15 @@ function render() {
   if (S.showSeg) {
     if (S.maskCanvas) ctx.drawImage(S.maskCanvas, 0, 0);
     else if (S.segImg) ctx.drawImage(S.segImg, 0, 0);
+    if (S.strokeCanvas) {
+      ctx.save();
+      ctx.globalAlpha = BRUSH_ALPHA;
+      ctx.drawImage(S.strokeCanvas, 0, 0);
+      ctx.restore();
+    }
   }
   if (S.showBoxes) drawBoxes();
   if (S.showKpts) drawKeypoints();
-  drawComments();
   drawBrushCursor();
 }
 
@@ -515,23 +617,64 @@ function drawBrushCursor() {
   ctx.restore();
 }
 
+function ensureStrokeBuffer() {
+  if (!S.maskCanvas) return null;
+  if (!S.strokeCanvas) {
+    const sc = document.createElement("canvas");
+    sc.width = S.maskCanvas.width;
+    sc.height = S.maskCanvas.height;
+    S.strokeCanvas = sc;
+    S.strokeCtx = sc.getContext("2d");
+  }
+  return S.strokeCtx;
+}
+
+function commitStroke() {
+  if (!S.strokeCanvas || !S.maskCtx) {
+    S.strokeCanvas = null;
+    S.strokeCtx = null;
+    return;
+  }
+  const mctx = S.maskCtx;
+  mctx.save();
+  // Clear any prior mask under the stroke so painted pixels end up at exactly
+  // BRUSH_ALPHA opacity instead of compounding with the existing overlay.
+  mctx.globalCompositeOperation = "destination-out";
+  mctx.drawImage(S.strokeCanvas, 0, 0);
+  // Lay down the stroke at the canonical mask alpha.
+  mctx.globalCompositeOperation = "source-over";
+  mctx.globalAlpha = BRUSH_ALPHA;
+  mctx.drawImage(S.strokeCanvas, 0, 0);
+  mctx.restore();
+  S.strokeCanvas = null;
+  S.strokeCtx = null;
+}
+
 function paintAt(ix, iy) {
   if (!S.maskCtx) return;
   const r = S.brushSize / 2;
-  const mctx = S.maskCtx;
-  mctx.save();
   if (S.tool === "brush") {
-    mctx.globalCompositeOperation = "source-over";
-    mctx.fillStyle = "rgba(0,200,0,0.4)";
+    const sctx = ensureStrokeBuffer();
+    if (!sctx) return;
+    sctx.save();
+    sctx.globalCompositeOperation = "source-over";
+    sctx.fillStyle = `rgba(${BRUSH_RGB},1)`;
+    sctx.beginPath();
+    sctx.arc(ix, iy, r, 0, Math.PI * 2);
+    sctx.fill();
+    sctx.restore();
   } else {
+    const mctx = S.maskCtx;
+    mctx.save();
     mctx.globalCompositeOperation = "destination-out";
     mctx.fillStyle = "rgba(0,0,0,1)";
+    mctx.beginPath();
+    mctx.arc(ix, iy, r, 0, Math.PI * 2);
+    mctx.fill();
+    mctx.restore();
   }
-  mctx.beginPath();
-  mctx.arc(ix, iy, r, 0, Math.PI * 2);
-  mctx.fill();
-  mctx.restore();
   S.maskDirty = true;
+  markDirty();
 }
 
 function paintLine(x0, y0, x1, y1) {
@@ -592,33 +735,6 @@ function drawKeypoints() {
   }
 }
 
-function drawComments() {
-  const fs = fontSize(), pr = Math.max(3, $canvas.width * 0.005);
-  ctx.font = fs + "px sans-serif";
-  for (const c of S.comments) {
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, pr, 0, Math.PI * 2);
-    ctx.fillStyle = "#ff4444";
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    const pad = 4;
-    const tw = ctx.measureText(c.text).width;
-    const bx = c.x + pr + 4;
-    const by = c.y - fs / 2 - pad;
-    const bw = tw + pad * 2;
-    const bh = fs + pad * 2;
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.beginPath();
-    ctx.roundRect(bx, by, bw, bh, 3);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.fillText(c.text, bx + pad, c.y + fs / 2 - pad);
-  }
-}
-
 /* ── Hit testing ─────────────────────────────────────── */
 function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
 
@@ -650,19 +766,11 @@ function findBoxBodyAt(ix, iy) {
   return -1;
 }
 
-function findCommentAt(ix, iy) {
-  const hr = hitR();
-  for (let i = S.comments.length - 1; i >= 0; i--)
-    if (dist(ix, iy, S.comments[i].x, S.comments[i].y) < hr) return i;
-  return -1;
-}
-
 /* ── Canvas interaction ──────────────────────────────── */
 $canvas.addEventListener("mousedown", onDown);
 $canvas.addEventListener("mousemove", onMove);
 $canvas.addEventListener("mouseup", onUp);
 $canvas.addEventListener("mouseleave", onLeave);
-$canvas.addEventListener("dblclick", onDbl);
 
 $canvas.addEventListener("touchstart", e => { e.preventDefault(); onDown(touchToMouse(e)); }, { passive: false });
 $canvas.addEventListener("touchmove", e => { e.preventDefault(); onMove(touchToMouse(e)); }, { passive: false });
@@ -675,12 +783,8 @@ function touchToMouse(e) {
 
 function onDown(e) {
   if (!S.sourceImg) return;
+  if (S.tool === "comment") return;
   const p = eventToImg(e);
-
-  if (S.tool === "comment") {
-    openCommentInput(p.x, p.y);
-    return;
-  }
 
   if (S.tool === "brush" || S.tool === "eraser") {
     paintAt(p.x, p.y);
@@ -729,7 +833,6 @@ function onMove(e) {
   }
 
   if (!S.drag) {
-    if (S.tool === "comment") { $canvas.style.cursor = "crosshair"; return; }
     const hit = findKptAt(p.x, p.y) || findCornerAt(p.x, p.y) || (findBoxBodyAt(p.x, p.y) >= 0);
     $canvas.style.cursor = hit ? "grab" : "default";
     return;
@@ -739,10 +842,12 @@ function onMove(e) {
 
   if (S.drag.type === "kpt") {
     S.keypoints[S.drag.det][S.drag.kpt] = [p.x, p.y];
+    markDirty();
   } else if (S.drag.type === "box") {
     const dx = p.x - S.drag.sx, dy = p.y - S.drag.sy;
     const ob = S.drag.origBox;
     S.boxes[S.drag.det] = [ob[0]+dx, ob[1]+dy, ob[2]+dx, ob[3]+dy];
+    markDirty();
   } else if (S.drag.type === "corner") {
     const ob = S.drag.origBox;
     let nb = [...ob];
@@ -752,63 +857,75 @@ function onMove(e) {
     else nb = [p.x, ob[1], ob[2], p.y];
     nb = nb.map((v, i) => Math.max(0, Math.min(v, i % 2 === 0 ? S.imgW : S.imgH)));
     S.boxes[S.drag.det] = nb;
-    S.boxes[S.drag.det] = nb;
+    markDirty();
   }
   render();
 }
 
 function onUp() {
+  if (S.tool === "brush" && S.strokeCanvas) {
+    commitStroke();
+    render();
+  }
   S.drag = null;
   setCursorForTool();
 }
 
 function onLeave() {
+  if (S.tool === "brush" && S.strokeCanvas) commitStroke();
   S.drag = null;
   S.cursorPos = null;
   setCursorForTool();
   if (S.tool === "brush" || S.tool === "eraser") render();
 }
 
-function onDbl(e) {
-  const p = eventToImg(e);
-  const ci = findCommentAt(p.x, p.y);
-  if (ci >= 0) {
-    S.comments.splice(ci, 1);
-    render();
-  }
+/* ── Comments panel ──────────────────────────────────── */
+function addCommentFromInput() {
+  const txt = $commentInput.value.trim();
+  if (!txt) return;
+  S.comments.push({ id: S.commentNextId++, text: txt });
+  $commentInput.value = "";
+  markDirty();
+  renderCommentsList();
 }
 
-/* ── Comment input ───────────────────────────────────── */
-function openCommentInput(ix, iy) {
-  const dp = imgToDisplay(ix, iy);
-  const wr = $canvasWrap.getBoundingClientRect();
-  $commentPopup.style.left = dp.x + "px";
-  $commentPopup.style.top = dp.y + "px";
-  $commentPopup.style.display = "block";
-  $commentInput.value = "";
-  $commentInput.focus();
-  S.pendingComment = { x: ix, y: iy };
+function deleteComment(id) {
+  const i = S.comments.findIndex(c => c.id === id);
+  if (i < 0) return;
+  S.comments.splice(i, 1);
+  markDirty();
+  renderCommentsList();
+}
+
+function renderCommentsList() {
+  if (!$commentsList) return;
+  if (!S.comments.length) {
+    $commentsList.innerHTML = '<div class="comments-empty">Aucun commentaire pour cette inf&eacute;rence.</div>';
+    return;
+  }
+  $commentsList.innerHTML = "";
+  for (const c of S.comments) {
+    const row = document.createElement("div");
+    row.className = "comment-item";
+    const txt = document.createElement("div");
+    txt.className = "ci-text";
+    txt.textContent = c.text;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ci-del";
+    del.title = "Supprimer";
+    del.textContent = "×";
+    del.addEventListener("click", () => deleteComment(c.id));
+    row.appendChild(txt);
+    row.appendChild(del);
+    $commentsList.appendChild(row);
+  }
 }
 
 $commentInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") saveComment();
-  if (e.key === "Escape") closeCommentInput();
+  if (e.key === "Enter") { e.preventDefault(); addCommentFromInput(); }
 });
-$commentInput.addEventListener("blur", () => { if (S.pendingComment) saveComment(); });
-
-function saveComment() {
-  const txt = $commentInput.value.trim();
-  if (txt && S.pendingComment) {
-    S.comments.push({ id: S.commentNextId++, x: S.pendingComment.x, y: S.pendingComment.y, text: txt });
-    render();
-  }
-  closeCommentInput();
-}
-
-function closeCommentInput() {
-  $commentPopup.style.display = "none";
-  S.pendingComment = null;
-}
+$commentAdd.addEventListener("click", addCommentFromInput);
 
 /* ── Datasets ────────────────────────────────────────── */
 async function loadDatasets() {
@@ -877,10 +994,14 @@ async function runUpload() {
 /* ── Display results ─────────────────────────────────── */
 function displayResults(d) {
   currentRunId = d.run_id || null;
+  clearDirty();
   $srcImg.src = "data:image/jpeg;base64," + d.source_b64;
 
-  S.comments = d.user_comments ? d.user_comments.map(c => ({...c})) : [];
+  S.comments = d.user_comments
+    ? d.user_comments.map(c => ({ id: c.id, text: c.text }))
+    : [];
   S.commentNextId = S.comments.length ? Math.max(...S.comments.map(c => c.id || 0)) + 1 : 1;
+  renderCommentsList();
   S.imageName = d.image_name || "";
   S.imageSize = d.image_size;
   S.groundTruth = d.ground_truth || null;
@@ -911,25 +1032,41 @@ function displayResults(d) {
 
   $topk.innerHTML = "";
   for (const e of cls.top_k) {
-    const li = document.createElement("li");
-    li.innerHTML = `<span>${e.rank}. ${e.class_name || "\u2014"}</span><span>${e.confidence}%</span>`;
-    const bar = document.createElement("span"); bar.className = "bar";
-    bar.style.width = Math.max(2, e.confidence) + "%";
-    bar.style.background = e.rank === 1 ? "#3b82f6" : "#93c5fd";
-    li.appendChild(bar); $topk.appendChild(li);
+    const isTop = e.rank === 1;
+    const row = document.createElement("div"); row.className = "obs-row";
+    row.innerHTML = `
+      <div class="obs-label">
+        <span class="obs-rank ${isTop ? 'r1' : 'rn'}">${e.rank}</span>
+        <span>${e.class_name || "\u2014"}</span>
+      </div>
+      <span class="obs-val">${e.confidence.toFixed(1)}%</span>
+      <div class="obs-bar-wrap">
+        <div class="obs-bar"><div class="obs-bar-fill" style="width:${Math.max(1, e.confidence)}%;background:${isTop ? '#3b82f6' : '#93c5fd'};"></div></div>
+      </div>`;
+    $topk.appendChild(row);
   }
 
   const seg = d.segmentation;
-  const clsL = {0:"foreground",1:"background",2:"border"};
-  let sh = `<div><strong>Backend :</strong> ${seg.backend}</div>`;
+  const segColors = {0:"#10b981", 1:"#94a3b8", 2:"#f59e0b"};
+  const segLabels = {0:"Foreground", 1:"Background", 2:"Border"};
+  let sh = `<div class="obs-kv"><span class="k">Backend</span><span class="v">${seg.backend}</span></div>`;
+  sh += '<div style="margin-top:8px;">';
   for (const s of seg.distribution) {
-    sh += `<div class="stat"><span>${clsL[s.class]||"cls"+s.class}</span><span class="bar" style="width:${Math.max(s.pct,2)}%;background:#10b981;"></span><span>${s.pct}%</span></div>`;
+    const c = segColors[s.class] || "#94a3b8";
+    sh += `<div class="obs-row">
+      <div class="obs-label"><span style="color:${c};font-weight:600;">\u25CF</span> ${segLabels[s.class]||"cls"+s.class}</div>
+      <span class="obs-val">${s.pct}%</span>
+      <div class="obs-bar-wrap"><div class="obs-bar"><div class="obs-bar-fill" style="width:${Math.max(1, s.pct)}%;background:${c};"></div></div></div>
+    </div>`;
   }
+  sh += '</div>';
   $segObs.innerHTML = sh;
 
   const pose = d.pose;
-  let ph = `<div><strong>D\u00e9tections :</strong> ${pose.num_detections}</div>`;
-  if (pose.best_conf !== null) ph += `<div><strong>Meilleure conf :</strong> ${pose.best_conf}</div>`;
+  let ph = '<div class="obs-kv">';
+  ph += `<span class="k">D\u00e9tections</span><span class="v">${pose.num_detections}</span>`;
+  if (pose.best_conf !== null) ph += `<span class="k">Meilleure conf.</span><span class="v">${pose.best_conf.toFixed(2)}</span>`;
+  ph += '</div>';
   $poseObs.innerHTML = ph;
 
   showResults(true);
@@ -937,6 +1074,8 @@ function displayResults(d) {
   S.maskCanvas = null;
   S.maskCtx = null;
   S.maskDirty = false;
+  S.strokeCanvas = null;
+  S.strokeCtx = null;
   S.cursorPos = null;
 
   requestAnimationFrame(() => {
@@ -1005,18 +1144,6 @@ function exportPng() {
       }
   }
 
-  tctx.font = fs + "px sans-serif";
-  for (const c of S.comments) {
-    const pr = Math.max(3, S.imgW * 0.005);
-    tctx.beginPath(); tctx.arc(c.x, c.y, pr, 0, Math.PI*2);
-    tctx.fillStyle = "#ff4444"; tctx.fill();
-    const tw = tctx.measureText(c.text).width, pad = 4;
-    tctx.fillStyle = "rgba(0,0,0,0.75)";
-    tctx.fillRect(c.x+pr+4, c.y-fs/2-pad, tw+pad*2, fs+pad*2);
-    tctx.fillStyle = "#fff";
-    tctx.fillText(c.text, c.x+pr+4+pad, c.y+fs/2-pad);
-  }
-
   const a = document.createElement("a");
   a.href = tc.toDataURL("image/png");
   a.download = (S.imageName || "overlay") + "_annotated.png";
@@ -1025,7 +1152,10 @@ function exportPng() {
 
 /* ── Export JSON ──────────────────────────────────────── */
 function exportJson() {
+  if (!S.sourceImg) { toast("Lancez d'abord une inférence", "err"); return; }
   const payload = {
+    exported_at: new Date().toISOString(),
+    run_id: currentRunId,
     image_name: S.imageName,
     image_size: S.imageSize,
     ground_truth: S.groundTruth,
@@ -1040,11 +1170,22 @@ function exportJson() {
     },
     comments: S.comments,
   };
+  // Embed the (possibly edited) segmentation mask so the export round-trips
+  // the user's brush corrections — not just keypoint/box/comment edits.
+  if (S.maskCanvas) {
+    payload.mask_b64 = S.maskCanvas.toDataURL("image/png").split(",", 2)[1];
+  }
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = (S.imageName || "overlay") + "_annotations.json";
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  const nb = S.boxes.length, nk = S.keypoints.reduce((s, d) => s + d.length, 0);
+  const nc = S.comments.length, nm = S.maskCanvas ? 1 : 0;
+  toast(`Export OK — ${nb} box, ${nk} kpts, ${nc} comm., ${nm ? "+ masque" : "pas de masque"}`);
 }
 
 /* ── Events ──────────────────────────────────────────── */
@@ -1056,6 +1197,7 @@ $btnRun.addEventListener("click", runInference);
 $btnPng.addEventListener("click", exportPng);
 $btnJson.addEventListener("click", exportJson);
 $btnSave.addEventListener("click", saveToDb);
+$btnImport.addEventListener("click", importJson);
 
 /* ── Toast ───────────────────────────────────────────── */
 let _toastTimer = null;
@@ -1088,11 +1230,59 @@ async function saveToDb() {
     });
     const d = await r.json();
     if (!r.ok) { toast(d.error || "Erreur", "err"); return; }
-    S.maskDirty = false;
-    toast("Sauvegarde OK (run #" + currentRunId + ")");
+    clearDirty();
+    const nc = S.comments.length;
+    toast(`Sauvegarde OK (run #${currentRunId} — ${nc} commentaire${nc > 1 ? "s" : ""})`);
     loadHistory();
   } catch (e) { toast("Erreur : " + e.message, "err"); }
   finally { $btnSave.disabled = false; }
+}
+
+/* ── Import JSON annotations ─────────────────────────── */
+function importJson() {
+  if (!S.sourceImg) { toast("Lancez d'abord une inférence", "err"); return; }
+  $importFile.value = "";
+  $importFile.click();
+}
+
+$importFile?.addEventListener("change", async () => {
+  const file = $importFile.files && $importFile.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    applyImportedAnnotations(data);
+    toast("Annotations importées");
+  } catch (e) {
+    toast("Fichier JSON invalide : " + e.message, "err");
+  }
+});
+
+function applyImportedAnnotations(data) {
+  const ann = data.pose_annotations || {};
+  if (Array.isArray(ann.boxes)) S.boxes = ann.boxes.map(b => [...b]);
+  if (Array.isArray(ann.keypoints)) S.keypoints = ann.keypoints.map(d => d.map(k => [...k]));
+  if (Array.isArray(ann.kpt_confs)) S.kptConfs = ann.kpt_confs.map(d => [...d]);
+  if (Array.isArray(ann.box_confs)) S.boxConfs = [...ann.box_confs];
+  const cs = data.comments || data.user_comments;
+  if (Array.isArray(cs)) {
+    S.comments = cs.map(c => ({ id: c.id || 0, x: c.x || 0, y: c.y || 0, text: c.text }));
+    S.commentNextId = S.comments.length ? Math.max(...S.comments.map(c => c.id || 0)) + 1 : 1;
+    renderCommentsList();
+  }
+  if (data.mask_b64 && S.maskCanvas) {
+    const img = new Image();
+    img.onload = () => {
+      const mctx = S.maskCtx;
+      mctx.clearRect(0, 0, S.maskCanvas.width, S.maskCanvas.height);
+      mctx.drawImage(img, 0, 0, S.maskCanvas.width, S.maskCanvas.height);
+      S.maskDirty = true;
+      render();
+    };
+    img.src = "data:image/png;base64," + data.mask_b64;
+  }
+  markDirty();
+  render();
 }
 
 /* ── History ─────────────────────────────────────────── */
