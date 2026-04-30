@@ -49,7 +49,6 @@ from bcs_pipeline.db import (
 )
 from bcs_pipeline.inference import (
     load_classification_model,
-    load_class_names,
     load_combined_class_names,
     load_pose_model,
     load_segmentation_backend,
@@ -67,8 +66,8 @@ logger = logging.getLogger("bcs_app")
 
 REPO_ROOT = Path(__file__).parent.resolve()
 
-CLASSIFICATION_CKPT = REPO_ROOT / "checkpoints/classification/resnet50_epoch15_valacc0.79.ckpt"
-DOGS_CATS_CKPT_DIR = REPO_ROOT / "checkpoints/classification/resnet50_dogs_cats"
+CLASSIFICATION_CKPT_DIR = REPO_ROOT / "checkpoints/classification/resnet50_dogs_cats"
+CLASSIFICATION_NUM_CLASSES = 132
 DEEPLAB_CKPT = REPO_ROOT / "checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt"
 SAM2_CKPT = REPO_ROOT / "checkpoints/sam2.1_hiera_large.pt"
 POSE_CKPT = REPO_ROOT / "checkpoints/pose/yolo_best.pt"
@@ -79,17 +78,14 @@ OXFORD_ROOT = REPO_ROOT / "data/Oxford-IIIT_pet_dataset"
 OXFORD_IMAGES = OXFORD_ROOT / "images"
 REDDIT_DIR = REPO_ROOT / "data/Reddit_example"
 
-CLASSIFIER_TYPES = ("stanford", "combined")
-DEFAULT_CLASSIFIER = "stanford"
-
 OUTPUT_DIR = REPO_ROOT / "data" / "outputs"
 
 _DB_ENGINE = None
 _DB_SESSION = None
 
 _MODELS: dict = {
-    "cls": {},          # keyed by classifier type ("stanford", "combined")
-    "class_names": {},  # keyed by classifier type
+    "cls": None,
+    "class_names": None,
     "seg": {},
     "pose": None,
 }
@@ -113,59 +109,41 @@ def _db():
     return _DB_SESSION()
 
 
-def _resolve_dogs_cats_ckpt() -> Optional[Path]:
-    """Locate a trained dogs+cats checkpoint.
+def _resolve_classifier_ckpt() -> Optional[Path]:
+    """Locate the trained dogs+cats checkpoint.
 
-    Prefers ``last.ckpt`` if present, otherwise picks the most recently
-    modified ``*.ckpt`` under ``checkpoints/classification/resnet50_dogs_cats/``.
-    Returns ``None`` when no checkpoint has been produced yet.
+    Prefers ``last.ckpt``, otherwise picks the most recently modified
+    ``*.ckpt`` under ``CLASSIFICATION_CKPT_DIR``. Returns ``None`` when
+    no checkpoint has been produced yet.
     """
-    if not DOGS_CATS_CKPT_DIR.is_dir():
+    if not CLASSIFICATION_CKPT_DIR.is_dir():
         return None
-    last = DOGS_CATS_CKPT_DIR / "last.ckpt"
+    last = CLASSIFICATION_CKPT_DIR / "last.ckpt"
     if last.is_file():
         return last
     candidates = sorted(
-        DOGS_CATS_CKPT_DIR.glob("*.ckpt"),
+        CLASSIFICATION_CKPT_DIR.glob("*.ckpt"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     return candidates[0] if candidates else None
 
 
-def _ensure_classifier(classifier: str = DEFAULT_CLASSIFIER):
-    """Load (and cache) the requested classifier model + class names.
+def _ensure_classifier():
+    """Load (and cache) the dogs+cats classifier model + 132 class names."""
+    if _MODELS["cls"] is not None:
+        return _MODELS["cls"], _MODELS["class_names"]
 
-    Parameters
-    ----------
-    classifier:
-        ``"stanford"`` for the original 120-dog-breeds model, or
-        ``"combined"`` for the 132-class dogs+cats model.
-    """
-    if classifier not in CLASSIFIER_TYPES:
-        raise ValueError(
-            f"Unknown classifier {classifier!r}. Expected one of {CLASSIFIER_TYPES}."
+    ckpt = _resolve_classifier_ckpt()
+    if ckpt is None:
+        raise FileNotFoundError(
+            f"No classifier checkpoint found under {CLASSIFICATION_CKPT_DIR}. "
+            "Train one with `python train.py --config-name=config_dogs_cats` "
+            "and copy the result there."
         )
-
-    if classifier in _MODELS["cls"]:
-        return _MODELS["cls"][classifier], _MODELS["class_names"][classifier]
-
-    if classifier == "combined":
-        ckpt = _resolve_dogs_cats_ckpt()
-        if ckpt is None:
-            raise FileNotFoundError(
-                f"No dogs+cats checkpoint found under {DOGS_CATS_CKPT_DIR}. "
-                "Train one first with `python train.py --config-name=config_dogs_cats`."
-            )
-        model = load_classification_model(str(ckpt), num_classes=132)
-        names = load_combined_class_names(str(STANFORD_ROOT), str(OXFORD_ROOT))
-    else:
-        model = load_classification_model(str(CLASSIFICATION_CKPT))
-        names = load_class_names(str(STANFORD_ROOT))
-
-    _MODELS["cls"][classifier] = model
-    _MODELS["class_names"][classifier] = names
-    return model, names
+    _MODELS["cls"] = load_classification_model(str(ckpt), num_classes=CLASSIFICATION_NUM_CLASSES)
+    _MODELS["class_names"] = load_combined_class_names(str(STANFORD_ROOT), str(OXFORD_ROOT))
+    return _MODELS["cls"], _MODELS["class_names"]
 
 
 def _ensure_segmenter(backend: str):
@@ -258,10 +236,9 @@ def _run_inference_on_image(
     sam2_mode: str = "prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
-    classifier: str = DEFAULT_CLASSIFIER,
 ) -> dict:
     img = img.convert("RGB")
-    cls_model, class_names = _ensure_classifier(classifier)
+    cls_model, class_names = _ensure_classifier()
     seg_handle = _ensure_segmenter(seg_backend)
     pose_model = _ensure_pose()
 
@@ -302,7 +279,6 @@ def _run_inference_on_image(
         "classification": {
             "class_name": cls.get("class_name"),
             "confidence": round(cls.get("confidence", 0.0) * 100, 2),
-            "classifier": classifier,
             "top_k": [
                 {
                     "rank": i + 1,
@@ -337,7 +313,6 @@ def _run_inference(
     sam2_mode: str = "prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
-    classifier: str = DEFAULT_CLASSIFIER,
 ) -> dict:
     img = Image.open(str(image_path)).convert("RGB")
     return _run_inference_on_image(
@@ -346,39 +321,12 @@ def _run_inference(
         sam2_mode=sam2_mode,
         top_k=top_k,
         conf_threshold=conf_threshold,
-        classifier=classifier,
     )
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"request": request})
-
-
-@app.get("/api/classifiers")
-def api_classifiers():
-    """Report which classifier checkpoints are present on disk.
-
-    The UI uses this to grey out the dogs+cats option until the user has
-    actually trained the second model.
-    """
-    return {
-        "default": DEFAULT_CLASSIFIER,
-        "available": {
-            "stanford": {
-                "label": "Chiens uniquement (Stanford, 120 races)",
-                "num_classes": 120,
-                "ready": CLASSIFICATION_CKPT.is_file(),
-                "checkpoint": str(CLASSIFICATION_CKPT) if CLASSIFICATION_CKPT.is_file() else None,
-            },
-            "combined": {
-                "label": "Chiens + Chats (Stanford 120 + Oxford 12)",
-                "num_classes": 132,
-                "ready": _resolve_dogs_cats_ckpt() is not None,
-                "checkpoint": str(_resolve_dogs_cats_ckpt()) if _resolve_dogs_cats_ckpt() else None,
-            },
-        },
-    }
 
 
 @app.get("/api/datasets")
@@ -422,7 +370,6 @@ async def api_inference(request: Request):
     filename = body.get("filename", "")
     seg_backend = body.get("seg_backend", "deeplab")
     sam2_mode = body.get("sam2_mode", "prompted")
-    classifier = body.get("classifier", DEFAULT_CLASSIFIER)
     top_k = body.get("top_k", 5)
     conf_threshold = body.get("conf_threshold", 0.25)
 
@@ -437,7 +384,6 @@ async def api_inference(request: Request):
             sam2_mode=sam2_mode,
             top_k=top_k,
             conf_threshold=conf_threshold,
-            classifier=classifier,
         )
         result["ground_truth"] = _ground_truth(dataset, group)
 
@@ -466,7 +412,6 @@ async def api_inference_upload(
     file: UploadFile = File(...),
     seg_backend: str = Form("deeplab"),
     sam2_mode: str = Form("prompted"),
-    classifier: str = Form(DEFAULT_CLASSIFIER),
     top_k: str = Form("5"),
     conf_threshold: str = Form("0.25"),
 ):
@@ -485,7 +430,6 @@ async def api_inference_upload(
             sam2_mode=sam2_mode,
             top_k=int(top_k),
             conf_threshold=float(conf_threshold),
-            classifier=classifier,
         )
         result["ground_truth"] = None
 
@@ -508,10 +452,12 @@ async def api_inference_upload(
 
 
 @app.get("/api/history")
-def api_history(limit: int = Query(50)):
+def api_history(limit: int = Query(50), offset: int = Query(0)):
     session = _db()
     try:
-        return db_list_runs(session, limit=limit)
+        total = session.query(InferenceRun).count()
+        runs = db_list_runs(session, limit=limit, offset=offset)
+        return {"total": total, "runs": runs, "page": offset // limit + 1, "page_size": limit}
     finally:
         session.close()
 

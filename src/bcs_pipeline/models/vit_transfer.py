@@ -35,6 +35,11 @@ class ViTTransfer(nn.Module):
             )
             self.vit = AutoModelForImageClassification.from_config(config)
 
+        # HuggingFace's from_pretrained() leaves the model in eval mode, which
+        # disables dropout during training and triggers Lightning's warning
+        # "Found N module(s) in eval mode at the start of training". Flip back.
+        self.train()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Transformers models return an object, we only want the bare logits
         outputs = self.vit(x)

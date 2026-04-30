@@ -249,8 +249,14 @@ def load_run(session: SaSession, run_id: int) -> Optional[Dict[str, Any]]:
     return data
 
 
-def list_runs(session: SaSession, limit: int = 50) -> List[Dict[str, Any]]:
-    runs = session.query(InferenceRun).order_by(InferenceRun.id.desc()).limit(limit).all()
+def list_runs(session: SaSession, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    runs = (
+        session.query(InferenceRun)
+        .order_by(InferenceRun.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
     return [r.to_summary() for r in runs]
 
 

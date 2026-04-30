@@ -42,6 +42,8 @@ STANFORD_URL="http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar"
 OXFORD_IMAGES_URL="https://www.robots.ox.ac.uk/~vgg/data/pets/data/images.tar.gz"
 OXFORD_ANNOT_URL="https://www.robots.ox.ac.uk/~vgg/data/pets/data/annotations.tar.gz"
 SAM2_CKPT_URL="https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
+REDDIT_IMG1_URL="https://preview.redd.it/is-my-dog-overweight-v0-t6vyhitvecng1.jpg?width=1080&crop=smart&auto=webp&s=50ea739e28b4918e60c1c690f7301b69d3b89c4b"
+REDDIT_IMG2_URL="https://preview.redd.it/is-my-dog-overweight-v0-nvhuvntvecng1.jpg?width=1080&crop=smart&auto=webp&s=49987ac045a56da4b81855f848784fa296f3db27"
 
 # Chemins locaux
 DATA_DIR="$SCRIPT_DIR/data"
@@ -58,6 +60,7 @@ SKIP_DATA=false
 SKIP_ENV=false
 NO_LAUNCH=false
 FORCE_CPU=false
+PRELOAD_DB=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -65,14 +68,16 @@ while [[ $# -gt 0 ]]; do
         --skip-env)   SKIP_ENV=true; shift ;;
         --no-launch)  NO_LAUNCH=true; shift ;;
         --cpu)        FORCE_CPU=true; shift ;;
+        --preload)    PRELOAD_DB=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--skip-data] [--skip-env] [--no-launch] [--cpu]"
+            echo "Usage: $0 [--skip-data] [--skip-env] [--no-launch] [--cpu] [--preload]"
             echo ""
             echo "Options:"
             echo "  --skip-data   Passer le téléchargement des données"
             echo "  --skip-env    Passer l'installation de l'environnement"
             echo "  --no-launch   Ne pas lancer l'app à la fin"
             echo "  --cpu         Forcer l'exécution sur CPU (ignore GPU)"
+            echo "  --preload     Pré-charger la base de données (inférences sur toutes les images)"
             exit 0 ;;
         *)
             error "Argument inconnu : $1"; exit 1 ;;
@@ -342,11 +347,8 @@ download_data() {
 
     # ── Reddit (images d'exemple) ────────────────────────────────────────────
     mkdir -p "$REDDIT_DIR"
-    if [[ -n "$(ls -A "$REDDIT_DIR/" 2>/dev/null)" ]]; then
-        success "Reddit examples présents"
-    else
-        warn "Dossier Reddit_example/ vide — ajoutez vos images manuellement"
-    fi
+    download "$REDDIT_IMG1_URL" "$REDDIT_DIR/reddit_dog_1.jpg"
+    download "$REDDIT_IMG2_URL" "$REDDIT_DIR/reddit_dog_2.jpg"
 
     # ── SAM 2.1 checkpoint ───────────────────────────────────────────────────
     download "$SAM2_CKPT_URL" "$SAM2_CKPT"
@@ -354,7 +356,7 @@ download_data() {
     # ── Checkpoints entraînés ────────────────────────────────────────────────
     echo ""
     # Paths matching app.py constants
-    local cls_ckpt="checkpoints/classification/resnet50_epoch15_valacc0.79.ckpt"
+    local cls_ckpt="checkpoints/classification/resnet50_dogs_cats/last.ckpt"
     local seg_ckpt="checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt"
     local pose_ckpt="checkpoints/pose/yolo_best.pt"
 
@@ -364,7 +366,32 @@ download_data() {
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ÉTAPE 4 : Lancement
+# ÉTAPE 4 : Pré-chargement de la base de données
+# ═════════════════════════════════════════════════════════════════════════════
+preload_database() {
+    if [[ "$PRELOAD_DB" != true ]]; then
+        return 0
+    fi
+
+    if [[ "$SKIP_DATA" == true ]]; then
+        return 0
+    fi
+
+    local cls_ckpt="checkpoints/classification/resnet50_dogs_cats/last.ckpt"
+    if [[ ! -f "$cls_ckpt" ]]; then
+        warn "Checkpoints d'entraînement manquants — pré-chargement ignoré"
+        info "Les inférences seront calculées à la demande via l'interface web"
+        return 0
+    fi
+
+    section "Pré-chargement de la base de données"
+    info "Lancement du pré-chargement des inférences ..."
+    python scripts/preload_db.py
+    success "Base de données pré-chargée"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ÉTAPE 5 : Lancement
 # ═════════════════════════════════════════════════════════════════════════════
 launch_app() {
     if [[ "$NO_LAUNCH" == true ]]; then
@@ -392,6 +419,7 @@ main() {
     ensure_uv
     setup_env
     download_data
+    preload_database
     launch_app
 }
 

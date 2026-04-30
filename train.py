@@ -153,6 +153,7 @@ def train(cfg: DictConfig) -> float:
                 test_split=cfg.get("test_split", 0.1),
                 seed=cfg.seed,
                 split_dir=str(experiment_dirs["splits"]),
+                balanced_sampling=cfg.get("balanced_sampling", False),
             )
         else:
             data_module = StanfordClassificationDataModule(

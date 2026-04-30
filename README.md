@@ -150,13 +150,15 @@ bcs_determination/
 ├── data/
 │   ├── stanford_dogs/                     # 120 breed folders (sous images/Images/)
 │   ├── Oxford-IIIT_pet_dataset/           # Pet images + trimaps (chats utilisés pour le combiné)
-│   ├── Reddit_example/                    # Out-of-distribution webp images
+│   ├── Reddit_example/                    # Out-of-distribution webp images (téléchargées automatiquement)
+│   │   ├── reddit_dog_1.jpg               #   Image Reddit #1
+│   │   └── reddit_dog_2.jpg               #   Image Reddit #2
 │   ├── Dog_Pose_Estimations/              # YOLOv8 pose training data
 │   ├── outputs/                           # JSON + PNG de chaque run sauvé (run_<id>.json, run_<id>_mask.png)
 │   └── bcs_app.db                         # SQLite — historique des runs et annotations utilisateur
 ├── experiments/                           # Auto-generated (checkpoints, TB logs, splits)
-│   ├── resnet50_adam_cosine_annealing/    # Classifieur 120 races (chiens uniquement)
-│   ├── resnet50_dogs_cats/                # Classifieur 132 races (chiens + chats)
+│   ├── resnet50_dogs_cats/                # Classifieur 132 races (chiens + chats) — modèle utilisé par l'app
+│   ├── resnet50_adam_cosine_annealing/    # Legacy — ancien classifieur 120 races (chiens seuls)
 │   ├── vit_adam_cosine_annealing/
 │   └── deeplabv3_resnet50_adam_cosine_annealing/
 ├── checkpoints/                           # SAM 2 foundation model weights
@@ -165,6 +167,9 @@ bcs_determination/
 ├── inference.py                           # CLI inference
 ├── app.py                                 # FastAPI/Uvicorn web app (UI interactive)
 ├── setup_and_run.sh                       # Bootstrap : uv venv + données + checkpoints + lancement
+├── scripts/
+│   ├── setup_and_run.sh                   # (idem, dans scripts/)
+│   └── preload_db.py                      # Pré-chargement DB : inférences sur toutes les images
 ├── environment.yaml
 ├── Dockerfile
 └── README.md
@@ -187,7 +192,8 @@ bcs_determination/
 
 Le script `setup_and_run.sh` installe `uv` (gestionnaire d'environnement
 Python rapide), crée le venv `.venv/`, télécharge les datasets (Stanford
-Dogs, Oxford-IIIT Pet) et le checkpoint SAM 2, puis lance l'application :
+Dogs, Oxford-IIIT Pet, images Reddit d'exemple) et le checkpoint SAM 2, puis
+lance l'application :
 
 ```bash
 chmod +x setup_and_run.sh
@@ -195,6 +201,8 @@ chmod +x setup_and_run.sh
 ./setup_and_run.sh --skip-data      # passer le téléchargement des données
 ./setup_and_run.sh --skip-env       # réutiliser .venv/ existant
 ./setup_and_run.sh --no-launch      # arrêter avant de lancer l'app
+./setup_and_run.sh --preload        # pré-charger la DB (inférences pré-calculées)
+./setup_and_run.sh --cpu            # forcer l'exécution sur CPU
 ```
 
 ### Option B — Conda manuel
@@ -245,6 +253,16 @@ data/Oxford-IIIT_pet_dataset/
     └── trimaps/
         ├── Abyssinian_1.png
         └── ...
+```
+
+**Images Reddit (exemples)**
+
+Le script télécharge automatiquement deux images d'exemple depuis Reddit dans `data/Reddit_example/` :
+
+```
+data/Reddit_example/
+├── reddit_dog_1.jpg
+└── reddit_dog_2.jpg
 ```
 
 ---
@@ -308,11 +326,21 @@ python inference.py \
 ### From Python
 
 ```python
-from bcs_pipeline.inference import load_model, load_class_names, predict_single
+from bcs_pipeline.inference import (
+    load_classification_model,
+    load_combined_class_names,
+    predict_single,
+)
 from PIL import Image
 
-model = load_model("checkpoints/best.ckpt", model_name="resnet50")
-class_names = load_class_names("data/stanford_dogs")
+model = load_classification_model(
+    "checkpoints/classification/resnet50_dogs_cats/last.ckpt",
+    num_classes=132,
+)
+class_names = load_combined_class_names(
+    "data/stanford_dogs/images",
+    "data/Oxford-IIIT_pet_dataset",
+)
 image = Image.open("dog.jpg").convert("RGB")
 
 result = predict_single(model, image, class_names=class_names, top_k=5)
@@ -455,6 +483,39 @@ python app.py
 Ouvrir **http://localhost:5000** dans un navigateur.
 
 > Les modèles sont chargés en mémoire au premier appel d'inférence (lazy loading). Le premier run est plus lent, les suivants sont instantanés.
+
+### Pré-chargement de la base de données
+
+Le script `scripts/preload_db.py` permet de **pré-calculer toutes les inférences** pour les images des datasets (Stanford Dogs, Oxford-IIIT Pet, Reddit) et de les stocker en base SQLite. Ainsi, l'interface web n'a pas à recalculer les résultats à la demande.
+
+```bash
+# Pré-charger avec les paramètres par défaut (DeepLabV3, top-5)
+python scripts/preload_db.py
+
+# Forcer le re-traitement d'images déjà en base
+python scripts/preload_db.py --force
+
+# Utiliser SAM 2 comme backend de segmentation
+python scripts/preload_db.py --seg-backend sam2 --sam2-mode automatic
+
+# Pré-charger un seul dataset
+python scripts/preload_db.py --datasets Reddit
+
+# Via setup_and_run.sh (après le setup)
+./setup_and_run.sh --preload
+```
+
+| Option | Défaut | Description |
+|---|---|---|
+| `--seg-backend` | `deeplab` | Backend de segmentation (`deeplab` ou `sam2`) |
+| `--sam2-mode` | `prompted` | Mode SAM 2 (`prompted`, `automatic`, `pose_prompted`) |
+| `--top-k` | `5` | Nombre de prédictions de classification |
+| `--conf-threshold` | `0.25` | Seuil de confiance YOLO |
+| `--db-path` | `data/bcs_app.db` | Chemin vers la base SQLite |
+| `--force` | — | Re-traiter les images déjà en base |
+| `--datasets` | tous | Limiter à certains datasets |
+
+Le script est **idempotent** : les images déjà présentes en base sont ignorées (sauf `--force`). Chaque résultat inclut l'origine (`source_type="dataset"`, `dataset`, `group_name`) pour distinguer les images de dataset des uploads utilisateur.
 
 ### Points d'accès API
 

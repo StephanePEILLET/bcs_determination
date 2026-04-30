@@ -53,10 +53,26 @@
   .drop-zone .dz-preview { max-height: 120px; margin-top: 10px; border-radius: 4px; }
 
   .action-bar {
-    margin-top: 16px; background: #fff; border-radius: 10px; padding: 12px 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-wrap: wrap;
-    gap: 12px; align-items: center;
+    margin-top: 16px; background: #fff; border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden;
   }
+  .action-row {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px;
+  }
+  .action-row + .action-row { border-top: 1px solid #f1f5f9; }
+  .action-row .row-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+    color: #64748b; min-width: 110px; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .action-row .row-label::before {
+    content: ""; display: inline-block; width: 4px; height: 14px;
+    border-radius: 2px; background: #3b82f6;
+  }
+  .action-row.row-vis .row-label::before { background: #10b981; }
+  .action-row.row-edit .row-label::before { background: #3b82f6; }
+  .action-row.row-save .row-label::before { background: #f59e0b; }
   .action-bar .label-sm {
     font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #555;
   }
@@ -68,19 +84,32 @@
     padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px;
     font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap;
   }
-  #btn-run { background: #3b82f6; color: #fff; }
-  #btn-run:hover { background: #2563eb; }
-  #btn-run:disabled { background: #93c5fd; cursor: not-allowed; }
-  .btn-export { background: #f8fafc; color: #374151; border: 1px solid #d1d5db; display: none; }
-  .btn-export:hover { background: #f1f5f9; }
+  .btn-run { background: #3b82f6; color: #fff; padding: 9px 22px; font-size: 14px; }
+  .btn-run:hover { background: #2563eb; }
+  .btn-run:disabled { background: #93c5fd; cursor: not-allowed; }
 
-  .tool-btn {
-    padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;
-    font-weight: 600; cursor: pointer; background: #f8fafc; color: #374151;
-    transition: background .15s, color .15s, border-color .15s;
+  .source-footer {
+    display: flex; justify-content: flex-start;
+    padding: 12px 20px; border-top: 1px solid #e5e7eb; background: #fafbfc;
   }
-  .tool-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-  .tool-btn:hover:not(.active) { background: #e2e8f0; }
+  .btn-export {
+    background: #fff; color: #475569; border: 1px solid #e2e8f0; display: none;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .btn-export:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+
+  .tool-group {
+    display: inline-flex; background: #f1f5f9; border-radius: 8px; padding: 3px; gap: 2px;
+  }
+  .tool-btn {
+    padding: 7px 14px; border: none; border-radius: 6px; font-size: 12px;
+    font-weight: 600; cursor: pointer; background: transparent; color: #475569;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background .15s, color .15s;
+  }
+  .tool-btn .tb-text { font-weight: 600; }
+  .tool-btn.active { background: #fff; color: #1e40af; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .tool-btn:hover:not(.active) { background: #e2e8f0; color: #1e293b; }
 
   .results { margin-top: 24px; display: none; }
   .results.active { display: block; }
@@ -219,6 +248,21 @@
 
   .history { margin-top: 24px; background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   .history h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+  .history-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .history-header h3 { margin-bottom: 0; border-bottom: none; }
+  .height-slider-wrap {
+    display: flex; align-items: center; gap: 6px; margin-left: auto;
+    font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+  }
+  .height-slider-wrap input[type="range"] {
+    width: 100px; accent-color: #3b82f6; cursor: pointer;
+  }
+  .height-slider-wrap .hs-val { min-width: 36px; text-align: right; color: #374151; font-variant-numeric: tabular-nums; }
+  .history-table-wrap {
+    max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+    transition: max-height .2s ease;
+  }
+  .history-table-wrap.collapsed { max-height: 0; border-color: transparent; overflow: hidden; }
   .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .history-table th { text-align: left; padding: 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #6b7280; border-bottom: 2px solid #e5e7eb; }
   .history-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
@@ -231,6 +275,45 @@
   .badge-ann.yes { background: #d1fae5; color: #065f46; }
   .badge-ann.no { background: #f3f4f6; color: #9ca3af; }
   .history-empty { text-align: center; padding: 24px; color: #9ca3af; font-size: 14px; }
+  .history-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; margin-bottom: 10px; background: #f8fafc;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+  }
+  .history-toolbar .ht-info { font-size: 12px; color: #475569; }
+  .history-toolbar .ht-info b { color: #1e293b; }
+  .history-toolbar .ht-spacer { flex: 1; }
+  .history-toolbar .ht-link {
+    background: none; border: none; padding: 4px 8px; cursor: pointer;
+    font-size: 12px; color: #3b82f6; font-weight: 600; border-radius: 4px;
+  }
+  .history-toolbar .ht-link:hover { background: #eff6ff; }
+  .history-toolbar .ht-bulk-del {
+    padding: 6px 14px; border: 1px solid #fecaca; border-radius: 6px;
+    background: #fff; color: #b91c1c; font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s, opacity .15s;
+  }
+  .history-toolbar .ht-bulk-del:hover:not(:disabled) { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+  .history-toolbar .ht-bulk-del:disabled { opacity: .4; cursor: not-allowed; }
+  .history-table input[type="checkbox"].row-select,
+  .history-table input[type="checkbox"].select-all {
+    width: 15px; height: 15px; accent-color: #3b82f6; cursor: pointer; vertical-align: middle;
+  }
+  .history-table tr.selected td { background: #eff6ff; }
+  .history-table tr.selected:hover td { background: #dbeafe; }
+  .pagination {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin-top: 12px; flex-wrap: wrap;
+  }
+  .pagination .pg-btn {
+    padding: 5px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;
+    font-weight: 600; cursor: pointer; background: #fff; color: #374151;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .pagination .pg-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #3b82f6; color: #1d4ed8; }
+  .pagination .pg-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .pagination .pg-btn.pg-active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  .pagination .pg-info { font-size: 12px; color: #6b7280; padding: 0 8px; }
   .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; color: #fff; z-index: 100; opacity: 0; transition: opacity .3s; pointer-events: none; }
   .toast.ok { background: #10b981; }
   .toast.err { background: #ef4444; }
@@ -264,10 +347,6 @@
         <div class="field"><label>Race / Groupe</label><select id="sel-group" disabled><option value="">&mdash;</option></select></div>
         <div class="field"><label>Image</label><select id="sel-image" disabled><option value="">&mdash;</option></select></div>
         <div class="field">
-          <label>Classifieur de race</label>
-          <select id="sel-classifier"><option value="stanford">Chargement&hellip;</option></select>
-        </div>
-        <div class="field">
           <label>Segmentation</label>
           <select id="sel-backend"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
         </div>
@@ -286,10 +365,6 @@
       </div>
       <div class="controls-grid" style="margin-top:12px;">
         <div class="field">
-          <label>Classifieur de race</label>
-          <select id="sel-classifier-up"><option value="stanford">Chargement&hellip;</option></select>
-        </div>
-        <div class="field">
           <label>Segmentation</label>
           <select id="sel-backend-up"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
         </div>
@@ -299,31 +374,42 @@
         </div>
       </div>
     </div>
+    <div class="source-footer">
+      <button class="btn btn-run" id="btn-run">&#9654;&ensp;Lancer l'inf&eacute;rence</button>
+    </div>
   </div>
 
-  <div class="action-bar" id="action-bar">
-    <span class="label-sm">Outil</span>
-    <button class="tool-btn active" id="tool-move" data-tool="move">&#9995;&ensp;D&eacute;placer</button>
-    <button class="tool-btn" id="tool-comment" data-tool="comment">&#128172;&ensp;Commentaire</button>
-    <button class="tool-btn" id="tool-brush" data-tool="brush">&#127912;&ensp;Pinceau</button>
-    <button class="tool-btn" id="tool-eraser" data-tool="eraser">&#9003;&ensp;Gomme</button>
-    <span class="brush-size-wrap" id="brush-size-wrap" style="display:none;align-items:center;gap:6px;">
-      <span class="label-sm">Taille</span>
-      <input type="range" id="brush-size" min="5" max="120" value="30" style="width:90px;">
-      <span id="brush-size-val" style="font-size:12px;color:#374151;width:28px;text-align:right;">30</span>
-    </span>
-    <span style="width:1px;height:24px;background:#e5e7eb;"></span>
-    <span class="label-sm">Couches</span>
-    <label class="toggle"><input type="checkbox" id="chk-seg" checked><span class="swatch" style="background:#00c800;"></span>Segmentation</label>
-    <label class="toggle"><input type="checkbox" id="chk-boxes" checked><span class="swatch" style="background:#32ff32;"></span>Boxes</label>
-    <label class="toggle"><input type="checkbox" id="chk-keypoints" checked><span class="swatch" style="background:#ff00ff;"></span>Keypoints</label>
-    <span class="spacer"></span>
-    <button class="btn btn-save" id="btn-save" title="Sauvegarder dans la base de donn&eacute;es">&#128190;&ensp;Sauvegarder</button>
-    <button class="btn btn-export" id="btn-export-png" title="T&eacute;l&eacute;charger l'overlay en PNG">&#11015;&#xFE0E; PNG</button>
-    <button class="btn btn-export" id="btn-export-json" title="Exporter les annotations en JSON">&#11015;&#xFE0E; JSON</button>
-    <button class="btn btn-export" id="btn-import-json" title="Importer un fichier JSON d'annotations">&#11014;&#xFE0E; JSON</button>
-    <input type="file" id="import-json-file" accept="application/json,.json" style="display:none;">
-    <button class="btn" id="btn-run">&#9654;&ensp;Lancer l'inf&eacute;rence</button>
+  <div class="action-bar" id="action-bar" style="display:none;">
+    <div class="action-row row-vis">
+      <span class="row-label">Visualisation</span>
+      <label class="toggle"><input type="checkbox" id="chk-seg" checked><span class="swatch" style="background:#00c800;"></span>Segmentation</label>
+      <label class="toggle"><input type="checkbox" id="chk-boxes" checked><span class="swatch" style="background:#32ff32;"></span>Bounding boxes</label>
+      <label class="toggle"><input type="checkbox" id="chk-keypoints" checked><span class="swatch" style="background:#ff00ff;"></span>Keypoints</label>
+    </div>
+    <div class="action-row row-edit">
+      <span class="row-label">Annotation</span>
+      <div class="tool-group">
+        <button class="tool-btn active" id="tool-move" data-tool="move" title="D&eacute;placer keypoints / coins de box">&#9995;<span class="tb-text">D&eacute;placer</span></button>
+        <button class="tool-btn" id="tool-comment" data-tool="comment" title="Ajouter un commentaire">&#128172;<span class="tb-text">Commentaire</span></button>
+        <button class="tool-btn" id="tool-brush" data-tool="brush" title="Peindre le masque de segmentation">&#127912;<span class="tb-text">Pinceau</span></button>
+        <button class="tool-btn" id="tool-eraser" data-tool="eraser" title="Effacer le masque">&#9003;<span class="tb-text">Gomme</span></button>
+      </div>
+      <span class="brush-size-wrap" id="brush-size-wrap" style="display:none;align-items:center;gap:6px;">
+        <span class="label-sm">Taille</span>
+        <input type="range" id="brush-size" min="5" max="120" value="30" style="width:120px;">
+        <span id="brush-size-val" style="font-size:12px;color:#374151;width:28px;text-align:right;">30</span>
+      </span>
+    </div>
+    <div class="action-row row-save">
+      <span class="row-label">Sauvegarde</span>
+      <button class="btn btn-save" id="btn-save" title="Sauvegarder les annotations dans la base de donn&eacute;es">&#128190;&ensp;Sauvegarder en base</button>
+      <span class="spacer"></span>
+      <span class="label-sm" style="margin-right:4px;">Fichier</span>
+      <button class="btn btn-export" id="btn-export-json" title="Exporter les annotations en JSON">&#11015;&#xFE0E;&ensp;Exporter JSON</button>
+      <button class="btn btn-export" id="btn-import-json" title="Importer un fichier JSON d'annotations">&#11014;&#xFE0E;&ensp;Importer JSON</button>
+      <button class="btn btn-export" id="btn-export-png" title="T&eacute;l&eacute;charger l'overlay en PNG">&#128247;&ensp;PNG</button>
+      <input type="file" id="import-json-file" accept="application/json,.json" style="display:none;">
+    </div>
   </div>
 
   <div class="spinner" id="spinner">Inf&eacute;rence en cours&hellip;</div>
@@ -374,7 +460,14 @@
       </div>
     </div>
     <div class="history" id="history-section">
-      <h3>Historique des inf&eacute;rences</h3>
+      <div class="history-header">
+        <h3>Historique des inf&eacute;rences</h3>
+        <div class="height-slider-wrap">
+          <span>Hauteur</span>
+          <input type="range" id="hist-height-slider" min="0" max="800" value="300" step="50">
+          <span class="hs-val" id="hist-height-val">300px</span>
+        </div>
+      </div>
       <div id="history-content"></div>
     </div>
   </div>
@@ -389,7 +482,6 @@ const $ = id => document.getElementById(id);
 const $dataset=$("sel-dataset"), $group=$("sel-group"), $image=$("sel-image");
 const $backend=$("sel-backend"), $sam2=$("sel-sam2-mode");
 const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up");
-const $classifier=$("sel-classifier"), $classifierUp=$("sel-classifier-up");
 const $chkSeg=$("chk-seg"), $chkBox=$("chk-boxes"), $chkKpt=$("chk-keypoints");
 const $btnRun=$("btn-run"), $btnPng=$("btn-export-png"), $btnJson=$("btn-export-json"), $btnSave=$("btn-save");
 const $btnImport=$("btn-import-json"), $importFile=$("import-json-file");
@@ -402,6 +494,7 @@ const $dropZone=$("drop-zone"), $fileInput=$("file-input"), $dzText=$("dz-text")
 const $canvas=$("editor-canvas"), $canvasWrap=$("canvas-wrap");
 const $commentInput=$("comment-input"), $commentAdd=$("comment-add"), $commentsList=$("comments-list"), $commentsPanel=$("comments-panel");
 const $hintBar=$("hint-bar"), $histContent=$("history-content"), $toast=$("toast");
+const $actionBar=$("action-bar");
 const ctx = $canvas.getContext("2d");
 
 let datasetsCache = {};
@@ -484,6 +577,7 @@ function showError(msg) { $error.textContent = msg; $error.classList.add("active
 function hideError() { $error.classList.remove("active"); }
 function showResults(v) {
   $results.classList.toggle("active", v);
+  $actionBar.style.display = v ? "" : "none";
   $btnPng.style.display = v ? "inline-block" : "none";
   $btnJson.style.display = v ? "inline-block" : "none";
   $btnImport.style.display = v ? "inline-block" : "none";
@@ -492,33 +586,7 @@ function showResults(v) {
 }
 function getBackend() { return activeTab === "tab-upload" ? $backendUp.value : $backend.value; }
 function getSam2() { return activeTab === "tab-upload" ? $sam2Up.value : $sam2.value; }
-function getClassifier() { return activeTab === "tab-upload" ? $classifierUp.value : $classifier.value; }
 function updateSam2State() { $sam2.disabled = $backend.value !== "sam2"; $sam2Up.disabled = $backendUp.value !== "sam2"; }
-
-async function loadClassifiers() {
-  try {
-    const r = await fetch("/api/classifiers");
-    const data = await r.json();
-    const def = data.default || "stanford";
-    function fillSelect(sel) {
-      sel.innerHTML = "";
-      for (const [key, info] of Object.entries(data.available || {})) {
-        const o = document.createElement("option");
-        o.value = key;
-        o.textContent = info.ready
-          ? info.label
-          : info.label + "  (non entraîné)";
-        if (!info.ready) o.disabled = true;
-        sel.appendChild(o);
-      }
-      sel.value = def;
-    }
-    fillSelect($classifier);
-    fillSelect($classifierUp);
-  } catch (e) {
-    console.warn("Could not load classifiers list:", e);
-  }
-}
 
 /* ── Tool mode ───────────────────────────────────────── */
 function setCursorForTool() {
@@ -971,7 +1039,6 @@ async function runDataset() {
     body: JSON.stringify({
       dataset: $dataset.value, group: $group.value, filename: $image.value,
       seg_backend: getBackend(), sam2_mode: getSam2(),
-      classifier: getClassifier(),
     }),
   });
   const d = await r.json();
@@ -984,7 +1051,6 @@ async function runUpload() {
   fd.append("file", uploadedFile);
   fd.append("seg_backend", getBackend());
   fd.append("sam2_mode", getSam2());
-  fd.append("classifier", getClassifier());
   const r = await fetch("/api/inference/upload", { method: "POST", body: fd });
   const d = await r.json();
   if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
@@ -1286,37 +1352,104 @@ function applyImportedAnnotations(data) {
 }
 
 /* ── History ─────────────────────────────────────────── */
+let _historyRuns = [];
+const _historySelected = new Set();
+
 async function loadHistory() {
   try {
     const r = await fetch("/api/history");
-    const runs = await r.json();
-    if (!runs.length) {
-      $histContent.innerHTML = '<div class="history-empty">Aucune inference enregistree.</div>';
-      return;
-    }
-    let html = '<table class="history-table"><thead><tr><th>#</th><th>Date</th><th>Image</th><th>Race predite</th><th>Conf.</th><th>Backend</th><th>Ann.</th><th>Actions</th></tr></thead><tbody>';
-    for (const r of runs) {
-      const dt = r.created_at ? new Date(r.created_at).toLocaleString("fr-FR") : "—";
-      const annBadge = r.has_annotations
-        ? '<span class="badge-ann yes">&#10003;</span>'
-        : '<span class="badge-ann no">&mdash;</span>';
-      html += `<tr>
-        <td>${r.id}</td>
-        <td>${dt}</td>
-        <td>${r.image_name || "—"}</td>
-        <td>${r.predicted_class || "—"}</td>
-        <td>${r.predicted_confidence != null ? r.predicted_confidence.toFixed(1) + "%" : "—"}</td>
-        <td>${r.seg_backend}</td>
-        <td>${annBadge}</td>
-        <td>
-          <button class="btn-sm" onclick="loadRun(${r.id})">Charger</button>
-          <button class="btn-sm btn-del" onclick="deleteRun(${r.id})">Supprimer</button>
-        </td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-    $histContent.innerHTML = html;
+    _historyRuns = await r.json();
+    // Drop selected ids that no longer exist
+    const ids = new Set(_historyRuns.map(x => x.id));
+    for (const id of [..._historySelected]) if (!ids.has(id)) _historySelected.delete(id);
+    renderHistory();
   } catch (e) { $histContent.innerHTML = '<div class="history-empty">Erreur de chargement.</div>'; }
+}
+
+function renderHistory() {
+  if (!_historyRuns.length) {
+    $histContent.innerHTML = '<div class="history-empty">Aucune inference enregistree.</div>';
+    return;
+  }
+  const total = _historyRuns.length, sel = _historySelected.size;
+  const allSelected = sel === total && total > 0;
+  let html = `
+    <div class="history-toolbar">
+      <span class="ht-info"><b>${total}</b> run${total>1?"s":""} · <b>${sel}</b> sélectionné${sel>1?"s":""}</span>
+      <button class="ht-link" id="ht-select-all">Tout sélectionner</button>
+      <button class="ht-link" id="ht-select-none">Aucun</button>
+      <span class="ht-spacer"></span>
+      <button class="ht-bulk-del" id="ht-bulk-del" ${sel===0?"disabled":""}>&#128465;&ensp;Supprimer ${sel>0?`(${sel})`:""}</button>
+    </div>
+    <table class="history-table"><thead><tr>
+      <th style="width:32px;"><input type="checkbox" class="select-all" id="ht-checkall" ${allSelected?"checked":""}></th>
+      <th>#</th><th>Date</th><th>Image</th><th>Race prédite</th><th>Conf.</th><th>Backend</th><th>Ann.</th><th>Actions</th>
+    </tr></thead><tbody>`;
+  for (const r of _historyRuns) {
+    const dt = r.created_at ? new Date(r.created_at).toLocaleString("fr-FR") : "—";
+    const annBadge = r.has_annotations
+      ? '<span class="badge-ann yes">&#10003;</span>'
+      : '<span class="badge-ann no">&mdash;</span>';
+    const isSel = _historySelected.has(r.id);
+    html += `<tr class="${isSel?"selected":""}" data-id="${r.id}">
+      <td><input type="checkbox" class="row-select" data-id="${r.id}" ${isSel?"checked":""}></td>
+      <td>${r.id}</td>
+      <td>${dt}</td>
+      <td>${r.image_name || "—"}</td>
+      <td>${r.predicted_class || "—"}</td>
+      <td>${r.predicted_confidence != null ? r.predicted_confidence.toFixed(1) + "%" : "—"}</td>
+      <td>${r.seg_backend}</td>
+      <td>${annBadge}</td>
+      <td>
+        <button class="btn-sm" onclick="loadRun(${r.id})">Charger</button>
+        <button class="btn-sm btn-del" onclick="deleteRun(${r.id})">Supprimer</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  $histContent.innerHTML = html;
+
+  // Wire toolbar
+  $("ht-select-all").addEventListener("click", () => {
+    _historyRuns.forEach(r => _historySelected.add(r.id));
+    renderHistory();
+  });
+  $("ht-select-none").addEventListener("click", () => {
+    _historySelected.clear();
+    renderHistory();
+  });
+  $("ht-checkall").addEventListener("change", e => {
+    if (e.target.checked) _historyRuns.forEach(r => _historySelected.add(r.id));
+    else _historySelected.clear();
+    renderHistory();
+  });
+  $("ht-bulk-del").addEventListener("click", bulkDeleteSelected);
+  // Wire row checkboxes
+  $histContent.querySelectorAll("input.row-select").forEach(cb => {
+    cb.addEventListener("change", e => {
+      const id = parseInt(e.target.dataset.id, 10);
+      if (e.target.checked) _historySelected.add(id);
+      else _historySelected.delete(id);
+      renderHistory();
+    });
+  });
+}
+
+async function bulkDeleteSelected() {
+  const ids = [..._historySelected];
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} run${ids.length>1?"s":""} de l'historique ?`)) return;
+  try {
+    const results = await Promise.allSettled(
+      ids.map(id => fetch(`/api/history/${id}`, { method: "DELETE" }))
+    );
+    const ok = results.filter(r => r.status === "fulfilled" && r.value.ok).length;
+    const ko = results.length - ok;
+    _historySelected.clear();
+    if (ko === 0) toast(`${ok} run${ok>1?"s":""} supprimé${ok>1?"s":""}`);
+    else toast(`${ok} supprimé${ok>1?"s":""}, ${ko} échoué${ko>1?"s":""}`, "err");
+    loadHistory();
+  } catch (e) { toast("Erreur : " + e.message, "err"); }
 }
 
 async function loadRun(id) {
@@ -1333,12 +1466,13 @@ async function deleteRun(id) {
   if (!confirm("Supprimer le run #" + id + " ?")) return;
   try {
     await fetch(`/api/history/${id}`, { method: "DELETE" });
+    _historySelected.delete(id);
     toast("Run #" + id + " supprime");
     loadHistory();
   } catch (e) { toast("Erreur : " + e.message, "err"); }
 }
 
-document.addEventListener("DOMContentLoaded", () => { updateSam2State(); loadDatasets(); loadClassifiers(); loadHistory(); });
+document.addEventListener("DOMContentLoaded", () => { updateSam2State(); loadDatasets(); loadHistory(); });
 </script>
 </body>
 </html>

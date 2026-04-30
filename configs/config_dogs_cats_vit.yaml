@@ -1,21 +1,22 @@
-# Configuration parameter for the combined Dogs+Cats breed classifier.
+# Configuration for the combined Dogs+Cats breed classifier with ViT backbone.
 # 120 Stanford Dogs breeds + 12 Oxford-IIIT Pet cat breeds = 132 classes.
+# Uses google/vit-base-patch16-224-in21k (loaded by src/bcs_pipeline/models/vit_transfer.py).
 defaults:
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
 
 seed: 42
 
-# ── Experiment naming (overrides the default model_name + optimizer
-# combination so the dogs-only and dogs+cats checkpoints don't collide).
-experiment_name: "resnet50_dogs_cats"
+experiment_name: "vit_dogs_cats"
 
 # ── Model ────────────────────────────────────────────────────────────
-model_name: "resnet50"
+model_name: "vit"
 num_classes: 132
 
 # ── Optimizer ────────────────────────────────────────────────────────
-lr: 0.001
+# ViT-Base needs a much lower LR than ResNet50 because the pre-trained
+# weights are highly informative — large LR overwrites them.
+lr: 5e-5
 optimizer_name: "adam"
 weight_decay: 1e-4
 
@@ -23,12 +24,12 @@ weight_decay: 1e-4
 scheduler_config:
   name: "cosine_annealing"
   T_max: 20
-  eta_min: 1e-6
+  eta_min: 1e-7
   monitor: "val_loss"
 
 # ── Regularization ───────────────────────────────────────────────────
 regularization:
-  dropout: 0.3
+  dropout: 0.1
   label_smoothing: 0.1
   mixup_alpha: 0.2
   cutmix_alpha: 1.0
@@ -36,24 +37,23 @@ regularization:
   stochastic_depth: 0.1
 
 # ── Data ─────────────────────────────────────────────────────────────
-# dataset: "combined" routes to CombinedDogsCatsDataModule
 dataset: "combined"
-# setup_and_run.sh extracts Stanford Dogs into data/stanford_dogs/images/Images/
-# (note the nested directory). This must match where ImageFolder will look.
 stanford_data_dir: "data/stanford_dogs/images"
 oxford_data_dir: "data/Oxford-IIIT_pet_dataset"
 data_dir: "data/stanford_dogs/images"
 image_size: 224
-batch_size: 32
+# ViT-Base is heavier than ResNet50; halve the batch if a 24GB GPU OOMs.
+batch_size: 64
 num_workers: 8
 val_split: 0.1
 test_split: 0.1
-# Inverse-frequency WeightedRandomSampler. Mild gain for the dogs+cats mix.
-balanced_sampling: false
+# Optional: oversample minority classes (cats are 10% of dataset).
+# Read by CombinedDogsCatsDataModule via cfg.balanced_sampling.
+balanced_sampling: true
 
 # ── Training ─────────────────────────────────────────────────────────
-max_epochs: 100
-patience: 15
+max_epochs: 120
+patience: 30
 
 task: "classification"
 seg_num_classes: 3
@@ -65,14 +65,15 @@ finetuning:
 log_every_n_steps: 10
 val_check_interval: 1.0
 
-precision: "32"
+# ViT trains well in fp16 on Ampere+ GPUs and roughly halves VRAM.
+precision: "16-mixed"
 gradient_clip_val: 1.0
 
 # ── TensorBoard ──────────────────────────────────────────────────────
 use_tensorboard: true
 tensorboard:
-  log_graph: true
-  log_weight_histograms: true
+  log_graph: false
+  log_weight_histograms: false
   histogram_every_n_epochs: 5
   log_images: true
   log_confusion_matrix: true
@@ -106,16 +107,15 @@ hydra:
     sampler:
       seed: ${seed}
     direction: maximize
-    study_name: bcs_dogs_cats_study
+    study_name: bcs_vit_dogs_cats_study
     storage: null
     n_trials: ${n_trials}
     n_jobs: 1
     params:
-      lr: choice(0.0001, 0.001, 0.005)
-      optimizer_name: choice("adam", "sgd")
-      batch_size: choice(16, 32, 64)
+      lr: choice(2e-5, 5e-5, 1e-4)
+      batch_size: choice(8, 16, 32)
   run:
-    dir: experiments/resnet50_dogs_cats/${now:%Y-%m-%d_%H-%M-%S}
+    dir: experiments/vit_dogs_cats/${now:%Y-%m-%d_%H-%M-%S}
   sweep:
-    dir: experiments/resnet50_dogs_cats/multirun_${now:%Y-%m-%d_%H-%M-%S}
+    dir: experiments/vit_dogs_cats/multirun_${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.num}
