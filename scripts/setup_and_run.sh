@@ -50,7 +50,7 @@ DATA_DIR="$SCRIPT_DIR/data"
 STANFORD_DIR="$DATA_DIR/stanford_dogs/images"
 OXFORD_DIR="$DATA_DIR/Oxford-IIIT_pet_dataset"
 REDDIT_DIR="$DATA_DIR/Reddit_example"
-SAM2_CKPT="$SCRIPT_DIR/checkpoints/sam2.1_hiera_large.pt"
+SAM2_CKPT="$SCRIPT_DIR/checkpoints/segmentation/sam2.1_hiera_large.pt"
 
 # GPU détecté (set in detect_gpu)
 GPU_TYPE="cpu"
@@ -356,7 +356,7 @@ download_data() {
     # ── Checkpoints entraînés ────────────────────────────────────────────────
     echo ""
     # Paths matching app.py constants
-    local cls_ckpt="checkpoints/classification/resnet50_dogs_cats/last.ckpt"
+    local cls_ckpt="checkpoints/classification/vit_dogs_cats/last.ckpt"
     local seg_ckpt="checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt"
     local pose_ckpt="checkpoints/pose/yolo_best.pt"
 
@@ -377,7 +377,7 @@ preload_database() {
         return 0
     fi
 
-    local cls_ckpt="checkpoints/classification/resnet50_dogs_cats/last.ckpt"
+    local cls_ckpt="checkpoints/classification/vit_dogs_cats/last.ckpt"
     if [[ ! -f "$cls_ckpt" ]]; then
         warn "Checkpoints d'entraînement manquants — pré-chargement ignoré"
         info "Les inférences seront calculées à la demande via l'interface web"

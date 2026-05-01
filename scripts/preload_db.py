@@ -21,17 +21,29 @@ Usage
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from bcs_pipeline.app_checkpoints import (
+    CLASSIFICATION_CKPT_DIR,
+    CLASSIFICATION_MODEL_NAME,
+    CLASSIFICATION_NUM_CLASSES,
+    DEEPLAB_CKPT,
+    POSE_CKPT,
+    REPO_ROOT,
+    SAM2_CKPT,
+    resolve_classifier_ckpt,
+)
+from bcs_pipeline.datasets import (
+    STANFORD_ROOT,
+    OXFORD_ROOT,
+    collect_all_images,
+)
 from bcs_pipeline.db import (
     InferenceRun,
     init_db,
@@ -42,11 +54,10 @@ from bcs_pipeline.inference import (
     load_combined_class_names,
     load_pose_model,
     load_segmentation_backend,
-    predict_pose,
-    predict_segmentation_with,
-    predict_single,
-    render_combined,
-    render_segmentation_layer,
+)
+from bcs_pipeline.inference_format import (
+    format_inference_result,
+    run_core_inference,
 )
 
 logging.basicConfig(
@@ -55,24 +66,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("preload_db")
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
-CLASSIFICATION_CKPT_DIR = REPO_ROOT / "checkpoints" / "classification" / "resnet50_dogs_cats"
-CLASSIFICATION_NUM_CLASSES = 132
-DEEPLAB_CKPT = REPO_ROOT / "checkpoints" / "segmentation" / "deeplabv3_resnet50_last-v1.ckpt"
-SAM2_CKPT = REPO_ROOT / "checkpoints" / "sam2.1_hiera_large.pt"
-POSE_CKPT = REPO_ROOT / "checkpoints" / "pose" / "yolo_best.pt"
-
-STANFORD_ROOT = REPO_ROOT / "data" / "stanford_dogs" / "images"
-STANFORD_IMAGES = STANFORD_ROOT / "Images"
-OXFORD_ROOT = REPO_ROOT / "data" / "Oxford-IIIT_pet_dataset"
-OXFORD_IMAGES = OXFORD_ROOT / "images"
-REDDIT_DIR = REPO_ROOT / "data" / "Reddit_example"
-
 OUTPUT_DIR = REPO_ROOT / "data" / "outputs"
 DEFAULT_DB_PATH = REPO_ROOT / "data" / "bcs_app.db"
-
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 STATS = {"processed": 0, "skipped": 0, "errors": 0}
 
@@ -119,68 +114,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_classifier_ckpt() -> Optional[Path]:
-    if not CLASSIFICATION_CKPT_DIR.is_dir():
-        return None
-    last = CLASSIFICATION_CKPT_DIR / "last.ckpt"
-    if last.is_file():
-        return last
-    candidates = sorted(
-        CLASSIFICATION_CKPT_DIR.glob("*.ckpt"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
-
-
-def _list_images(folder: Path) -> List[Path]:
-    if not folder.is_dir():
-        return []
-    return sorted(
-        p for p in folder.iterdir()
-        if p.suffix.lower() in IMAGE_EXTS and p.is_file()
-    )
-
-
-def _collect_stanford() -> List[Tuple[Path, str, str, Optional[str]]]:
-    """Return [(image_path, dataset, group_name, ground_truth), ...]."""
-    entries: List[Tuple[Path, str, str, Optional[str]]] = []
-    if not STANFORD_IMAGES.is_dir():
-        logger.warning("Stanford Dogs directory not found: %s", STANFORD_IMAGES)
-        return entries
-    for breed_dir in sorted(p for p in STANFORD_IMAGES.iterdir() if p.is_dir()):
-        breed_name = (
-            breed_dir.name.split("-", 1)[1]
-            if "-" in breed_dir.name
-            else breed_dir.name
-        )
-        for img_path in _list_images(breed_dir):
-            entries.append((img_path, "Stanford Dogs", breed_name, breed_name))
-    return entries
-
-
-def _collect_oxford() -> List[Tuple[Path, str, str, Optional[str]]]:
-    entries: List[Tuple[Path, str, str, Optional[str]]] = []
-    if not OXFORD_IMAGES.is_dir():
-        logger.warning("Oxford-IIIT Pet images directory not found: %s", OXFORD_IMAGES)
-        return entries
-    for img_path in _list_images(OXFORD_IMAGES):
-        prefix = "_".join(img_path.stem.split("_")[:-1])
-        ground_truth = prefix.replace("_", " ")
-        entries.append((img_path, "Oxford-IIIT Pet", prefix, ground_truth))
-    return entries
-
-
-def _collect_reddit() -> List[Tuple[Path, str, str, Optional[str]]]:
-    entries: List[Tuple[Path, str, str, Optional[str]]] = []
-    if not REDDIT_DIR.is_dir():
-        logger.warning("Reddit example directory not found: %s", REDDIT_DIR)
-        return entries
-    for img_path in _list_images(REDDIT_DIR):
-        entries.append((img_path, "Reddit", "all", None))
-    return entries
-
-
 def _is_already_processed(session, image_name: str, dataset: str,
                           group_name: str, seg_backend: str) -> bool:
     q = (
@@ -207,88 +140,38 @@ def _run_inference(
     sam2_mode: str = "prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
-) -> Dict[str, Any]:
+) -> dict:
     from PIL import Image
 
     img = img.convert("RGB")
-
-    cls = predict_single(cls_model, img, class_names=class_names, top_k=top_k)
-
-    needs_pose_first = seg_backend == "sam2" and sam2_mode == "pose_prompted"
-    pose = predict_pose(pose_model, img, conf_threshold=conf_threshold) if needs_pose_first else None
-
-    seg = predict_segmentation_with(
-        seg_backend, seg_handle, img,
-        sam2_mode=sam2_mode, pose_result=pose,
+    cls, seg, pose = run_core_inference(
+        cls_model, class_names, seg_handle, seg_backend, pose_model, img,
+        sam2_mode=sam2_mode, top_k=top_k, conf_threshold=conf_threshold,
     )
-
-    if pose is None:
-        pose = predict_pose(pose_model, img, conf_threshold=conf_threshold)
-
-    mask = seg["mask"]
-    unique, counts = np.unique(mask, return_counts=True)
-    seg_dist = [
-        {"class": int(u), "pct": round(float(c) / mask.size * 100, 1)}
-        for u, c in zip(unique, counts)
-    ]
-
-    return {
-        "image_name": image_name,
-        "image_size": list(img.size),
-        "classification": {
-            "class_name": cls.get("class_name"),
-            "confidence": round(cls.get("confidence", 0.0) * 100, 2),
-            "top_k": [
-                {
-                    "rank": i + 1,
-                    "class_name": e.get("class_name"),
-                    "confidence": round(e.get("confidence", 0.0) * 100, 2),
-                }
-                for i, e in enumerate(cls.get("top_k", []))
-            ],
-        },
-        "segmentation": {
-            "backend": seg.get("backend", seg_backend),
-            "distribution": seg_dist,
-        },
-        "pose": {
-            "num_detections": pose.get("num_detections", 0),
-            "best_conf": round(float(pose["box_confs"][0]), 2) if pose.get("num_detections", 0) > 0 else None,
-        },
-        "pose_annotations": {
-            "boxes": pose["boxes"].tolist(),
-            "keypoints": pose["keypoints"].tolist(),
-            "kpt_confs": pose["kpt_confs"].tolist(),
-            "box_confs": pose["box_confs"].tolist(),
-        },
-    }
+    return format_inference_result(cls, seg, pose, image_name, img.size, seg_backend)
 
 
 def main() -> None:
     args = parse_args()
     start_time = time.time()
 
-    print("\n╔══════════════════════════════════════════════════════╗")
-    print("║       🐾  Body Pawsitive — Pre-load Database        ║")
-    print("╚══════════════════════════════════════════════════════╝\n")
+    print("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557")
+    print("\u2551       \U0001F43E  Body Pawsitive \u2014 Pre-load Database        \u2551")
+    print("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n")
 
     engine, session_local = init_db(args.db_path)
     session = session_local()
 
     filter_datasets = set(args.datasets) if args.datasets else None
 
-    all_entries = []
-    for collector, name in [
-        (_collect_stanford, "Stanford Dogs"),
-        (_collect_oxford, "Oxford-IIIT Pet"),
-        (_collect_reddit, "Reddit"),
-    ]:
-        if filter_datasets and name not in filter_datasets:
-            logger.info("Skipping dataset: %s", name)
-            continue
-        entries = collector()
-        logger.info("  %-20s → %d images", name, len(entries))
-        all_entries.extend(entries)
+    all_entries = collect_all_images()
+
+    if filter_datasets:
+        all_entries = [e for e in all_entries if e[1] in filter_datasets]
+
+    for name in ["Stanford Dogs", "Oxford-IIIT Pet", "Reddit"]:
+        count = sum(1 for e in all_entries if e[1] == name)
+        logger.info("  %-20s \u2192 %d images", name, count)
 
     if not all_entries:
         logger.warning("No images found. Check that data directories are populated.")
@@ -302,20 +185,26 @@ def main() -> None:
     print(f"  SAM2 mode              : {args.sam2_mode}")
     print()
 
-    # ── Load models ──────────────────────────────────────────────────────────
     cls_model = None
     class_names = None
     seg_handle = None
     pose_model = None
 
-    ckpt = _resolve_classifier_ckpt()
+    ckpt = resolve_classifier_ckpt()
     if ckpt is not None:
-        logger.info("Loading classification model from %s ...", ckpt)
-        cls_model = load_classification_model(str(ckpt), num_classes=CLASSIFICATION_NUM_CLASSES)
+        logger.info("Loading classification model (%s, %d classes) from %s ...",
+                    CLASSIFICATION_MODEL_NAME, CLASSIFICATION_NUM_CLASSES,
+                    ckpt.relative_to(REPO_ROOT))
+        cls_model = load_classification_model(
+            str(ckpt),
+            model_name=CLASSIFICATION_MODEL_NAME,
+            num_classes=CLASSIFICATION_NUM_CLASSES,
+        )
         class_names = load_combined_class_names(str(STANFORD_ROOT), str(OXFORD_ROOT))
         logger.info("Classification model loaded (%d classes).", len(class_names) if class_names else 0)
     else:
-        logger.warning("No classification checkpoint found — skipping classification.")
+        logger.warning("No classification checkpoint found in %s \u2014 skipping classification.",
+                       CLASSIFICATION_CKPT_DIR)
 
     seg_ckpt_path = str(SAM2_CKPT) if args.seg_backend == "sam2" else str(DEEPLAB_CKPT)
     seg_ckpt_file = SAM2_CKPT if args.seg_backend == "sam2" else DEEPLAB_CKPT
@@ -324,28 +213,27 @@ def main() -> None:
         seg_handle = load_segmentation_backend(args.seg_backend, seg_ckpt_path)
         logger.info("Segmentation model loaded.")
     else:
-        logger.warning("Segmentation checkpoint not found (%s) — skipping segmentation.", seg_ckpt_file)
+        logger.warning("Segmentation checkpoint not found (%s) \u2014 skipping segmentation.", seg_ckpt_file)
 
     if POSE_CKPT.is_file():
         logger.info("Loading pose model from %s ...", POSE_CKPT)
         pose_model = load_pose_model(str(POSE_CKPT))
         logger.info("Pose model loaded.")
     else:
-        logger.warning("Pose checkpoint not found (%s) — skipping pose.", POSE_CKPT)
+        logger.warning("Pose checkpoint not found (%s) \u2014 skipping pose.", POSE_CKPT)
 
     if cls_model is None and seg_handle is None and pose_model is None:
-        logger.error("No models could be loaded — nothing to do.")
+        logger.error("No models could be loaded \u2014 nothing to do.")
         session.close()
         engine.dispose()
         sys.exit(1)
 
-    # ── Process images ───────────────────────────────────────────────────────
     from PIL import Image
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print()
-    for idx, (img_path, dataset, group_name, ground_truth) in enumerate(all_entries, 1):
+    for idx, (img_path, dataset, group_name, gt) in enumerate(all_entries, 1):
         image_name = img_path.name
         tag = f"[{idx}/{total}]"
 
@@ -380,7 +268,7 @@ def main() -> None:
                 source_type="dataset",
                 dataset=dataset,
                 group_name=group_name,
-                ground_truth=ground_truth,
+                ground_truth=gt,
                 seg_backend=args.seg_backend,
                 sam2_mode=args.sam2_mode,
             )
@@ -388,7 +276,7 @@ def main() -> None:
             STATS["processed"] += 1
             if STATS["processed"] % 50 == 0 or idx == total:
                 logger.info(
-                    "%s %s → %s (%.1f%% done)",
+                    "%s %s \u2192 %s (%.1f%% done)",
                     tag, image_name, result["classification"].get("class_name", "?"),
                     idx / total * 100,
                 )
@@ -398,18 +286,17 @@ def main() -> None:
             STATS["errors"] += 1
             session.rollback()
 
-    # ── Summary ──────────────────────────────────────────────────────────────
     elapsed = time.time() - start_time
     session.close()
     engine.dispose()
 
-    print(f"\n{'━' * 50}")
+    print(f"\n{'\u2501' * 50}")
     print(f"  Pre-load complete in {elapsed:.1f}s")
     print(f"  Processed : {STATS['processed']}")
     print(f"  Skipped   : {STATS['skipped']} (already in DB)")
     print(f"  Errors    : {STATS['errors']}")
     print(f"  Database  : {args.db_path}")
-    print(f"{'━' * 50}\n")
+    print(f"{'\u2501' * 50}\n")
 
 
 if __name__ == "__main__":

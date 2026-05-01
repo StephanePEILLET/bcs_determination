@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import base64
 
@@ -18,10 +19,12 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     inspect,
     text,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as SaSession
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -32,6 +35,18 @@ Base = declarative_base()
 
 class InferenceRun(Base):
     __tablename__ = "inference_runs"
+    __table_args__ = (
+        # One run per (image, dataset, group, segmentation backend). Prevents
+        # the preload worker and an interactive `/api/inference` call from
+        # racing on the same image and inserting duplicates.
+        # NB: NULLs in `dataset` / `group_name` are treated as distinct by
+        # SQLite, so user-uploaded images (where both are NULL) are never
+        # blocked from re-running by this constraint.
+        UniqueConstraint(
+            "image_name", "dataset", "group_name", "seg_backend",
+            name="uq_run_image_dataset_group_backend",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -104,16 +119,80 @@ def init_db(db_path: str):
     return engine, session_local
 
 
+@contextmanager
+def session_scope(session_factory) -> Generator[SaSession, None, None]:
+    """Yield a fresh ORM session: rollback on exception, always close.
+
+    **Does NOT commit.** Persistence helpers in this module
+    (``save_run``, ``save_annotations``, ``delete_run``) commit
+    themselves. ``session_scope`` only guards against leaking sessions and
+    half-applied state when something raises.
+    """
+    session = session_factory()
+    try:
+        yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def _migrate_schema(engine) -> None:
-    """Add columns added after the initial schema. Idempotent."""
+    """Apply schema migrations after the initial CREATE TABLE. Idempotent.
+
+    On an existing DB, ``create_all`` is a no-op for already-present tables,
+    so any constraint or column added after the initial schema must be
+    backfilled here.
+    """
     inspector = inspect(engine)
-    if "user_annotations" not in inspector.get_table_names():
-        return
-    cols = {c["name"] for c in inspector.get_columns("user_annotations")}
-    if "mask_path" not in cols:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE user_annotations ADD COLUMN mask_path VARCHAR"))
-        logger.info("Migrated user_annotations: added mask_path column")
+    table_names = set(inspector.get_table_names())
+
+    # ── user_annotations.mask_path (added later) ────────────────────────────
+    if "user_annotations" in table_names:
+        cols = {c["name"] for c in inspector.get_columns("user_annotations")}
+        if "mask_path" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE user_annotations ADD COLUMN mask_path VARCHAR"))
+            logger.info("Migrated user_annotations: added mask_path column")
+
+    # ── inference_runs UNIQUE(image_name, dataset, group_name, seg_backend) ──
+    # On a pre-existing DB, the constraint declared in __table_args__ is not
+    # retro-applied by create_all. Backfill via a unique index after pruning
+    # any duplicates (keeping the most recent row per group).
+    if "inference_runs" in table_names:
+        existing_indexes = {idx["name"] for idx in inspector.get_indexes("inference_runs")}
+        if "uq_run_image_dataset_group_backend" not in existing_indexes:
+            with engine.begin() as conn:
+                # Find duplicate groups (>1 row sharing the unique tuple).
+                dup_rows = conn.execute(text(
+                    "SELECT image_name, dataset, group_name, seg_backend, COUNT(*) AS n "
+                    "FROM inference_runs "
+                    "GROUP BY image_name, dataset, group_name, seg_backend "
+                    "HAVING n > 1"
+                )).fetchall()
+                if dup_rows:
+                    logger.warning(
+                        "Found %d duplicate run group(s) — pruning all but the most recent in each.",
+                        len(dup_rows),
+                    )
+                    # For each duplicated tuple, keep MAX(id) and delete the rest.
+                    deleted = conn.execute(text(
+                        "DELETE FROM inference_runs WHERE id IN ("
+                        "  SELECT id FROM inference_runs r1 "
+                        "  WHERE id < (SELECT MAX(id) FROM inference_runs r2 "
+                        "              WHERE r2.image_name = r1.image_name "
+                        "                AND COALESCE(r2.dataset,'')   = COALESCE(r1.dataset,'') "
+                        "                AND COALESCE(r2.group_name,'') = COALESCE(r1.group_name,'') "
+                        "                AND COALESCE(r2.seg_backend,'') = COALESCE(r1.seg_backend,''))"
+                        ")"
+                    ))
+                    logger.warning("Pruned %d duplicate run(s).", deleted.rowcount or 0)
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_run_image_dataset_group_backend "
+                    "ON inference_runs (image_name, dataset, group_name, seg_backend)"
+                ))
+            logger.info("Migrated inference_runs: created unique index on (image_name, dataset, group_name, seg_backend)")
 
 
 def save_run(
@@ -127,12 +206,18 @@ def save_run(
     seg_backend: str = "deeplab",
     sam2_mode: str = "prompted",
 ) -> InferenceRun:
+    """Persist an inference result. Idempotent on the unique tuple
+    ``(image_name, dataset, group_name, seg_backend)``: if a row already
+    exists for that key, the existing row is returned and the on-disk JSON
+    is refreshed (so the latest prediction is reflected on subsequent
+    GETs)."""
     cls = result.get("classification", {})
     pose = result.get("pose", {})
     img_size = result.get("image_size", [0, 0])
+    image_name = result.get("image_name", "unknown")
 
     run = InferenceRun(
-        image_name=result.get("image_name", "unknown"),
+        image_name=image_name,
         source_type=source_type,
         dataset=dataset,
         group_name=group_name,
@@ -147,7 +232,29 @@ def save_run(
         best_pose_conf=pose.get("best_conf"),
     )
     session.add(run)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # Another writer beat us to it; recover the canonical row instead of
+        # surfacing a 500. The caller will see a fully-populated InferenceRun.
+        session.rollback()
+        existing = (
+            session.query(InferenceRun)
+            .filter(
+                InferenceRun.image_name == image_name,
+                InferenceRun.dataset == dataset,
+                InferenceRun.group_name == group_name,
+                InferenceRun.seg_backend == seg_backend,
+            )
+            .first()
+        )
+        if existing is None:
+            raise  # constraint violated for some other reason — propagate
+        logger.info(
+            "save_run: run already exists for %s/%s/%s/%s → returning #%d",
+            image_name, dataset, group_name, seg_backend, existing.id,
+        )
+        return existing
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / f"run_{run.id}.json"

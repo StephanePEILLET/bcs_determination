@@ -24,14 +24,15 @@ import base64
 import io
 import logging
 import sys
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, Form, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image
 from starlette.requests import Request
@@ -39,44 +40,53 @@ from starlette.responses import HTMLResponse
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from bcs_pipeline.app_checkpoints import (
+    CLASSIFICATION_MODEL_NAME,
+    CLASSIFICATION_NUM_CLASSES,
+    CLASSIFICATION_CKPT_DIR,
+    DEEPLAB_CKPT,
+    SAM2_CKPT,
+    POSE_CKPT,
+    REPO_ROOT,
+    describe_active_models,
+    resolve_classifier_ckpt,
+)
+from bcs_pipeline.datasets import (
+    collect_all_images,
+    get_datasets,
+    ground_truth,
+    list_image_files,
+    resolve_image_path,
+    STANFORD_ROOT,
+    OXFORD_ROOT,
+)
 from bcs_pipeline.db import (
+    InferenceRun,
     delete_run as db_delete_run,
     init_db,
     list_runs as db_list_runs,
     load_run as db_load_run,
     save_annotations as db_save_annotations,
     save_run as db_save_run,
+    session_scope,
 )
 from bcs_pipeline.inference import (
     load_classification_model,
     load_combined_class_names,
     load_pose_model,
     load_segmentation_backend,
-    predict_pose,
-    predict_segmentation_with,
-    predict_single,
     render_combined,
 )
 from bcs_pipeline.inference.visualization import (
     render_segmentation_layer,
 )
+from bcs_pipeline.inference_format import (
+    format_inference_result,
+    run_core_inference,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("bcs_app")
-
-REPO_ROOT = Path(__file__).parent.resolve()
-
-CLASSIFICATION_CKPT_DIR = REPO_ROOT / "checkpoints/classification/resnet50_dogs_cats"
-CLASSIFICATION_NUM_CLASSES = 132
-DEEPLAB_CKPT = REPO_ROOT / "checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt"
-SAM2_CKPT = REPO_ROOT / "checkpoints/sam2.1_hiera_large.pt"
-POSE_CKPT = REPO_ROOT / "checkpoints/pose/yolo_best.pt"
-
-STANFORD_ROOT = REPO_ROOT / "data/stanford_dogs/images"
-STANFORD_IMAGES = STANFORD_ROOT / "Images"
-OXFORD_ROOT = REPO_ROOT / "data/Oxford-IIIT_pet_dataset"
-OXFORD_IMAGES = OXFORD_ROOT / "images"
-REDDIT_DIR = REPO_ROOT / "data/Reddit_example"
 
 OUTPUT_DIR = REPO_ROOT / "data" / "outputs"
 
@@ -102,46 +112,135 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Body Pawsitive", docs_url=None, redoc_url=None, lifespan=_lifespan)
+app.mount("/static", StaticFiles(directory=str(REPO_ROOT / "static")), name="static")
 templates = Jinja2Templates(directory=str(REPO_ROOT / "templates"))
 
 
-def _db():
-    return _DB_SESSION()
+_preload_state: dict = {
+    "running": False,
+    "total": 0,
+    "processed": 0,
+    "errors": 0,
+    "done": False,
+    "message": "",
+}
 
 
-def _resolve_classifier_ckpt() -> Optional[Path]:
-    """Locate the trained dogs+cats checkpoint.
+def _preload_worker(seg_backend: str, sam2_mode: str):
+    global _preload_state
+    try:
+        _preload_state["running"] = True
+        _preload_state["done"] = False
+        _preload_state["processed"] = 0
+        _preload_state["errors"] = 0
+        _preload_state["message"] = "Chargement des mod\u00e8les\u2026"
 
-    Prefers ``last.ckpt``, otherwise picks the most recently modified
-    ``*.ckpt`` under ``CLASSIFICATION_CKPT_DIR``. Returns ``None`` when
-    no checkpoint has been produced yet.
-    """
-    if not CLASSIFICATION_CKPT_DIR.is_dir():
-        return None
-    last = CLASSIFICATION_CKPT_DIR / "last.ckpt"
-    if last.is_file():
-        return last
-    candidates = sorted(
-        CLASSIFICATION_CKPT_DIR.glob("*.ckpt"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
+        cls_model, class_names = _ensure_classifier()
+        seg_handle = _ensure_segmenter(seg_backend)
+        pose_model = _ensure_pose()
+
+        all_entries = collect_all_images()
+        _preload_state["total"] = len(all_entries)
+
+        if not all_entries:
+            _preload_state["message"] = "Aucune image trouv\u00e9e"
+            _preload_state["done"] = True
+            _preload_state["running"] = False
+            return
+
+        with session_scope(_DB_SESSION) as session:
+            rows = session.query(
+                InferenceRun.image_name,
+                InferenceRun.dataset,
+                InferenceRun.group_name,
+            ).filter(InferenceRun.seg_backend == seg_backend).all()
+            existing = {(r.image_name, r.dataset, r.group_name) for r in rows}
+
+        to_process = [
+            (p, ds, gn, gt) for p, ds, gn, gt in all_entries
+            if (p.name, ds, gn) not in existing
+        ]
+        _preload_state["total"] = len(to_process)
+
+        if not to_process:
+            _preload_state["message"] = "Base d\u00e9j\u00e0 compl\u00e8te"
+            _preload_state["done"] = True
+            _preload_state["running"] = False
+            return
+
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        _preload_state["message"] = f"Traitement de {len(to_process)} images\u2026"
+
+        for idx, (img_path, dataset, group_name, gt) in enumerate(to_process):
+            if not _preload_state["running"]:
+                _preload_state["message"] = "Pr\u00e9-chargement annul\u00e9"
+                break
+
+            try:
+                img = Image.open(str(img_path)).convert("RGB")
+                result = _run_inference_on_image(
+                    img, img_path.name,
+                    seg_backend=seg_backend,
+                    sam2_mode=sam2_mode,
+                )
+
+                with session_scope(_DB_SESSION) as session:
+                    try:
+                        db_save_run(
+                            session, OUTPUT_DIR, result,
+                            source_type="dataset",
+                            dataset=dataset,
+                            group_name=group_name,
+                            ground_truth=gt,
+                            seg_backend=seg_backend,
+                            sam2_mode=sam2_mode,
+                        )
+                    except Exception:
+                        logger.exception("Failed to save preload run for %s", img_path.name)
+
+                _preload_state["processed"] += 1
+            except Exception:
+                logger.exception("Preload failed for %s", img_path)
+                _preload_state["errors"] += 1
+
+            _preload_state["message"] = (
+                f"{_preload_state['processed']}/{len(to_process)} trait\u00e9es"
+                + (f" — {_preload_state['errors']} erreur(s)" if _preload_state["errors"] else "")
+            )
+
+        _preload_state["done"] = True
+        _preload_state["message"] = (
+            f"Termin\u00e9 : {_preload_state['processed']} images, "
+            f"{_preload_state['errors']} erreur(s)"
+        )
+    except Exception:
+        logger.exception("Preload worker crashed")
+        _preload_state["message"] = "Erreur lors du pr\u00e9-chargement"
+        _preload_state["done"] = True
+    finally:
+        _preload_state["running"] = False
 
 
 def _ensure_classifier():
-    """Load (and cache) the dogs+cats classifier model + 132 class names."""
     if _MODELS["cls"] is not None:
         return _MODELS["cls"], _MODELS["class_names"]
 
-    ckpt = _resolve_classifier_ckpt()
+    ckpt = resolve_classifier_ckpt()
     if ckpt is None:
         raise FileNotFoundError(
             f"No classifier checkpoint found under {CLASSIFICATION_CKPT_DIR}. "
-            "Train one with `python train.py --config-name=config_dogs_cats` "
-            "and copy the result there."
+            f"Train one with `python train.py --config-name=config_dogs_cats_vit` "
+            "and place the resulting `last.ckpt` there, or edit "
+            "src/bcs_pipeline/app_checkpoints.py to point to a different model."
         )
-    _MODELS["cls"] = load_classification_model(str(ckpt), num_classes=CLASSIFICATION_NUM_CLASSES)
+    logger.info("Loading classifier (%s, %d classes) from %s",
+                CLASSIFICATION_MODEL_NAME, CLASSIFICATION_NUM_CLASSES,
+                ckpt.relative_to(REPO_ROOT))
+    _MODELS["cls"] = load_classification_model(
+        str(ckpt),
+        model_name=CLASSIFICATION_MODEL_NAME,
+        num_classes=CLASSIFICATION_NUM_CLASSES,
+    )
     _MODELS["class_names"] = load_combined_class_names(str(STANFORD_ROOT), str(OXFORD_ROOT))
     return _MODELS["cls"], _MODELS["class_names"]
 
@@ -159,74 +258,10 @@ def _ensure_pose():
     return _MODELS["pose"]
 
 
-def _list_image_files(folder: Path) -> List[Path]:
-    exts = {".jpg", ".jpeg", ".png", ".webp"}
-    if not folder.is_dir():
-        return []
-    return sorted(p for p in folder.iterdir() if p.suffix.lower() in exts and p.is_file())
-
-
-def _stanford_groups() -> Dict[str, List[str]]:
-    groups = {}
-    if not STANFORD_IMAGES.is_dir():
-        return groups
-    for breed_dir in sorted(p for p in STANFORD_IMAGES.iterdir() if p.is_dir()):
-        breed_name = breed_dir.name.split("-", 1)[1] if "-" in breed_dir.name else breed_dir.name
-        groups[breed_name] = [p.name for p in _list_image_files(breed_dir)]
-    return groups
-
-
-def _oxford_groups() -> Dict[str, List[str]]:
-    groups: Dict[str, List[str]] = {}
-    for img_path in _list_image_files(OXFORD_IMAGES):
-        prefix = "_".join(img_path.stem.split("_")[:-1])
-        groups.setdefault(prefix, []).append(img_path.name)
-    return {k: sorted(v) for k, v in sorted(groups.items())}
-
-
-def _reddit_groups() -> Dict[str, List[str]]:
-    files = _list_image_files(REDDIT_DIR)
-    return {"all": [f.name for f in files]} if files else {}
-
-
-def _get_datasets() -> Dict[str, Dict[str, List[str]]]:
-    return {
-        "Reddit": _reddit_groups(),
-        "Stanford Dogs": _stanford_groups(),
-        "Oxford-IIIT Pet": _oxford_groups(),
-    }
-
-
-def _resolve_image_path(dataset: str, group: str, filename: str) -> Optional[Path]:
-    if dataset == "Reddit":
-        return REDDIT_DIR / filename
-    if dataset == "Stanford Dogs":
-        for breed_dir in STANFORD_IMAGES.iterdir():
-            if not breed_dir.is_dir():
-                continue
-            breed_name = breed_dir.name.split("-", 1)[1] if "-" in breed_dir.name else breed_dir.name
-            if breed_name == group:
-                return breed_dir / filename
-        return None
-    if dataset == "Oxford-IIIT Pet":
-        return OXFORD_IMAGES / filename
-    return None
-
-
 def _img_to_b64(img: Image.Image, fmt: str = "PNG") -> str:
     buf = io.BytesIO()
     img.save(buf, format=fmt)
     return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def _ground_truth(dataset: str, group: str) -> Optional[str]:
-    if dataset == "Reddit":
-        return None
-    if dataset == "Stanford Dogs":
-        return group if group else None
-    if dataset == "Oxford-IIIT Pet":
-        return group.replace("_", " ") if group else None
-    return None
 
 
 def _run_inference_on_image(
@@ -242,69 +277,23 @@ def _run_inference_on_image(
     seg_handle = _ensure_segmenter(seg_backend)
     pose_model = _ensure_pose()
 
-    cls = predict_single(cls_model, img, class_names=class_names, top_k=top_k)
-
-    needs_pose_first = seg_backend == "sam2" and sam2_mode == "pose_prompted"
-    pose = predict_pose(pose_model, img, conf_threshold=conf_threshold) if needs_pose_first else None
-
-    seg = predict_segmentation_with(
-        seg_backend, seg_handle, img,
-        sam2_mode=sam2_mode, pose_result=pose,
+    cls, seg, pose = run_core_inference(
+        cls_model, class_names, seg_handle, seg_backend, pose_model, img,
+        sam2_mode=sam2_mode, top_k=top_k, conf_threshold=conf_threshold,
     )
 
-    if pose is None:
-        pose = predict_pose(pose_model, img, conf_threshold=conf_threshold)
-
     canvas = img.convert("RGB")
-
     seg_layer = render_segmentation_layer(canvas, seg["mask"])
-
     full = render_combined(
-        canvas,
-        classification=cls, segmentation=seg, pose=pose,
+        canvas, classification=cls, segmentation=seg, pose=pose,
         show_label=False,
     )
 
-    mask = seg["mask"]
-    unique, counts = np.unique(mask, return_counts=True)
-    seg_dist = [
-        {"class": int(u), "pct": round(float(c) / mask.size * 100, 1)}
-        for u, c in zip(unique, counts)
-    ]
-
-    return {
-        "source_b64": _img_to_b64(img, "JPEG"),
-        "seg_b64": _img_to_b64(seg_layer, "PNG"),
-        "full_b64": _img_to_b64(full, "PNG"),
-        "classification": {
-            "class_name": cls.get("class_name"),
-            "confidence": round(cls.get("confidence", 0.0) * 100, 2),
-            "top_k": [
-                {
-                    "rank": i + 1,
-                    "class_name": e.get("class_name"),
-                    "confidence": round(e.get("confidence", 0.0) * 100, 2),
-                }
-                for i, e in enumerate(cls.get("top_k", []))
-            ],
-        },
-        "segmentation": {
-            "backend": seg.get("backend", seg_backend),
-            "distribution": seg_dist,
-        },
-        "pose": {
-            "num_detections": pose.get("num_detections", 0),
-            "best_conf": round(float(pose["box_confs"][0]), 2) if pose.get("num_detections", 0) > 0 else None,
-        },
-        "pose_annotations": {
-            "boxes": pose["boxes"].tolist(),
-            "keypoints": pose["keypoints"].tolist(),
-            "kpt_confs": pose["kpt_confs"].tolist(),
-            "box_confs": pose["box_confs"].tolist(),
-        },
-        "image_size": list(img.size),
-        "image_name": image_name,
-    }
+    result = format_inference_result(cls, seg, pose, image_name, img.size, seg_backend)
+    result["source_b64"] = _img_to_b64(img, "JPEG")
+    result["seg_b64"] = _img_to_b64(seg_layer, "PNG")
+    result["full_b64"] = _img_to_b64(full, "PNG")
+    return result
 
 
 def _run_inference(
@@ -331,7 +320,7 @@ def index(request: Request):
 
 @app.get("/api/datasets")
 def api_datasets():
-    datasets = _get_datasets()
+    datasets = get_datasets()
     payload = {}
     for name, groups in datasets.items():
         payload[name] = {
@@ -343,15 +332,14 @@ def api_datasets():
 
 @app.get("/api/images")
 def api_images(dataset: str = Query(""), group: str = Query("")):
-    datasets = _get_datasets()
+    datasets = get_datasets()
     groups = datasets.get(dataset, {})
     return groups.get(group, [])
 
 
 @app.get("/api/thumbnail/{dataset}/{group}/{filepath:path}")
 def api_thumbnail(filepath: str, dataset: str, group: str):
-    filename = filepath
-    image_path = _resolve_image_path(dataset, group, filename)
+    image_path = resolve_image_path(dataset, group, filepath)
     if image_path is None or not image_path.exists():
         return JSONResponse({"error": "not found"}, status_code=404)
     img = Image.open(str(image_path)).convert("RGB")
@@ -373,7 +361,7 @@ async def api_inference(request: Request):
     top_k = body.get("top_k", 5)
     conf_threshold = body.get("conf_threshold", 0.25)
 
-    image_path = _resolve_image_path(dataset, group, filename)
+    image_path = resolve_image_path(dataset, group, filename)
     if image_path is None or not image_path.exists():
         return JSONResponse({"error": f"Image not found: {filename}"}, status_code=404)
 
@@ -385,21 +373,19 @@ async def api_inference(request: Request):
             top_k=top_k,
             conf_threshold=conf_threshold,
         )
-        result["ground_truth"] = _ground_truth(dataset, group)
+        result["ground_truth"] = ground_truth(dataset, group)
 
-        session = _db()
-        try:
-            run = db_save_run(
-                session, OUTPUT_DIR, result,
-                source_type="dataset", dataset=dataset, group_name=group,
-                ground_truth=result["ground_truth"],
-                seg_backend=seg_backend, sam2_mode=sam2_mode,
-            )
-            result["run_id"] = run.id
-        except Exception:
-            logger.exception("Failed to save run to DB")
-        finally:
-            session.close()
+        with session_scope(_DB_SESSION) as session:
+            try:
+                run = db_save_run(
+                    session, OUTPUT_DIR, result,
+                    source_type="dataset", dataset=dataset, group_name=group,
+                    ground_truth=result["ground_truth"],
+                    seg_backend=seg_backend, sam2_mode=sam2_mode,
+                )
+                result["run_id"] = run.id
+            except Exception:
+                logger.exception("Failed to save run to DB")
 
         return result
     except Exception as exc:
@@ -433,17 +419,15 @@ async def api_inference_upload(
         )
         result["ground_truth"] = None
 
-        session = _db()
-        try:
-            run = db_save_run(
-                session, OUTPUT_DIR, result,
-                source_type="upload", seg_backend=seg_backend, sam2_mode=sam2_mode,
-            )
-            result["run_id"] = run.id
-        except Exception:
-            logger.exception("Failed to save upload run to DB")
-        finally:
-            session.close()
+        with session_scope(_DB_SESSION) as session:
+            try:
+                run = db_save_run(
+                    session, OUTPUT_DIR, result,
+                    source_type="upload", seg_backend=seg_backend, sam2_mode=sam2_mode,
+                )
+                result["run_id"] = run.id
+            except Exception:
+                logger.exception("Failed to save upload run to DB")
 
         return result
     except Exception as exc:
@@ -453,35 +437,22 @@ async def api_inference_upload(
 
 @app.get("/api/history")
 def api_history(limit: int = Query(50), offset: int = Query(0)):
-    session = _db()
-    try:
+    with session_scope(_DB_SESSION) as session:
         total = session.query(InferenceRun).count()
         runs = db_list_runs(session, limit=limit, offset=offset)
         return {"total": total, "runs": runs, "page": offset // limit + 1, "page_size": limit}
-    finally:
-        session.close()
 
 
 @app.get("/api/history/{run_id}")
 def api_history_detail(run_id: int):
-    session = _db()
-    try:
+    with session_scope(_DB_SESSION) as session:
         data = db_load_run(session, run_id)
         if data is None:
             return JSONResponse({"error": "Run not found"}, status_code=404)
-        mask_path = data.pop("mask_path", None)
-        if mask_path:
-            mp = Path(mask_path)
-            if mp.exists():
-                with open(mp, "rb") as f:
-                    data["mask_b64"] = base64.b64encode(f.read()).decode("ascii")
         return data
-    finally:
-        session.close()
 
 
 def _decode_and_save_mask(run_id: int, mask_b64: str) -> str:
-    """Decode a base64 PNG and write it to data/outputs/run_{id}_mask.png."""
     if mask_b64.startswith("data:"):
         mask_b64 = mask_b64.split(",", 1)[1]
     raw = base64.b64decode(mask_b64)
@@ -495,42 +466,91 @@ def _decode_and_save_mask(run_id: int, mask_b64: str) -> str:
 @app.post("/api/history/{run_id}/annotations")
 async def api_save_annotations(run_id: int, request: Request):
     body = await request.json()
-    session = _db()
-    try:
-        mask_b64 = body.get("mask_b64")
-        mask_path = _decode_and_save_mask(run_id, mask_b64) if mask_b64 else None
-        ann = db_save_annotations(
-            session,
-            run_id,
-            boxes=body.get("boxes", []),
-            keypoints=body.get("keypoints", []),
-            kpt_confs=body.get("kpt_confs", []),
-            box_confs=body.get("box_confs", []),
-            comments=body.get("comments", []),
-            mask_path=mask_path,
-        )
-        if ann is None:
-            return JSONResponse({"error": "Run not found"}, status_code=404)
-        return {"status": "ok", "run_id": run_id}
-    except Exception as exc:
-        logger.exception("Failed to save annotations for run %d", run_id)
-        return JSONResponse({"error": str(exc)}, status_code=500)
-    finally:
-        session.close()
+    with session_scope(_DB_SESSION) as session:
+        try:
+            mask_b64 = body.get("mask_b64")
+            mask_path = _decode_and_save_mask(run_id, mask_b64) if mask_b64 else None
+            ann = db_save_annotations(
+                session,
+                run_id,
+                boxes=body.get("boxes", []),
+                keypoints=body.get("keypoints", []),
+                kpt_confs=body.get("kpt_confs", []),
+                box_confs=body.get("box_confs", []),
+                comments=body.get("comments", []),
+                mask_path=mask_path,
+            )
+            if ann is None:
+                return JSONResponse({"error": "Run not found"}, status_code=404)
+            return {"status": "ok", "run_id": run_id}
+        except Exception as exc:
+            logger.exception("Failed to save annotations for run %d", run_id)
+            return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.delete("/api/history/{run_id}")
 def api_delete_history(run_id: int):
-    session = _db()
-    try:
+    with session_scope(_DB_SESSION) as session:
         ok = db_delete_run(session, run_id)
         if not ok:
             return JSONResponse({"error": "Run not found"}, status_code=404)
         return {"status": "deleted"}
-    finally:
-        session.close()
+
+
+@app.get("/api/preload/status")
+def api_preload_status():
+    total_images = len(collect_all_images())
+    with session_scope(_DB_SESSION) as session:
+        db_count = session.query(InferenceRun).filter(
+            InferenceRun.source_type == "dataset"
+        ).count()
+    remaining = max(0, total_images - db_count)
+    return {
+        "total_images": total_images,
+        "db_count": db_count,
+        "remaining": remaining,
+        "complete": remaining == 0,
+        "running": _preload_state["running"],
+        "progress": _preload_state.copy(),
+    }
+
+
+@app.post("/api/preload/start")
+async def api_preload_start(request: Request):
+    if _preload_state["running"]:
+        return JSONResponse({"error": "Pr\u00e9-chargement d\u00e9j\u00e0 en cours"}, status_code=409)
+
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    seg_backend = body.get("seg_backend", "deeplab")
+    sam2_mode = body.get("sam2_mode", "prompted")
+
+    ckpt = resolve_classifier_ckpt()
+    if ckpt is None:
+        return JSONResponse({"error": "Aucun checkpoint de classification trouv\u00e9"}, status_code=400)
+
+    total_images = len(collect_all_images())
+    if total_images == 0:
+        return JSONResponse({"error": "Aucune image trouv\u00e9e dans les datasets"}, status_code=400)
+
+    thread = threading.Thread(
+        target=_preload_worker,
+        args=(seg_backend, sam2_mode),
+        daemon=True,
+    )
+    thread.start()
+    return {"status": "started", "total_images": total_images}
+
+
+@app.post("/api/preload/stop")
+def api_preload_stop():
+    if not _preload_state["running"]:
+        return JSONResponse({"error": "Aucun pr\u00e9-chargement en cours"}, status_code=409)
+    _preload_state["running"] = False
+    return {"status": "stopping"}
 
 
 if __name__ == "__main__":
     logger.info("Starting Body Pawsitive on http://localhost:5000 (Uvicorn ASGI)")
+    for line in describe_active_models().splitlines():
+        logger.info(line)
     uvicorn.run(app, host="0.0.0.0", port=5000)

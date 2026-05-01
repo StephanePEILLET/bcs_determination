@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Body Pawsitive</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/images/paw_logo.png">
+<link rel="icon" type="image/x-icon" href="/static/images/favicon.ico">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -13,9 +15,14 @@
   header {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     color: #fff; padding: 18px 32px; display: flex; align-items: center; gap: 16px;
+    justify-content: space-between;
   }
   header h1 { font-size: 22px; font-weight: 600; }
   header p { font-size: 13px; opacity: 0.75; }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header-right { flex-shrink: 0; }
+  .header-right img { height: 72px; border-radius: 10px; }
+  .header-right { flex-shrink: 0; }
   .container { max-width: 1340px; margin: 0 auto; padding: 24px; }
 
   .source-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; }
@@ -87,6 +94,26 @@
   .btn-run { background: #3b82f6; color: #fff; padding: 9px 22px; font-size: 14px; }
   .btn-run:hover { background: #2563eb; }
   .btn-run:disabled { background: #93c5fd; cursor: not-allowed; }
+
+  .btn-preload { background: #8b5cf6; color: #fff; padding: 9px 22px; font-size: 14px; }
+  .btn-preload:hover { background: #7c3aed; }
+  .btn-preload:disabled { background: #c4b5fd; cursor: not-allowed; }
+  .btn-preload-stop { background: #ef4444; color: #fff; padding: 9px 22px; font-size: 14px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; display: none; transition: background .15s; }
+  .btn-preload-stop:hover { background: #dc2626; }
+
+  .preload-progress-wrap {
+    display: none; align-items: center; gap: 10px; margin-left: 12px; flex: 1; min-width: 200px;
+  }
+  .preload-progress-wrap.active { display: flex; }
+  .preload-bar {
+    flex: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; max-width: 300px;
+  }
+  .preload-bar .preload-bar-fill {
+    height: 100%; background: #8b5cf6; border-radius: 4px; transition: width .3s ease; width: 0%;
+  }
+  .preload-info {
+    font-size: 12px; color: #6b7280; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
 
   .source-footer {
     display: flex; justify-content: flex-start;
@@ -328,9 +355,14 @@
 <body>
 
 <header>
-  <div>
-    <h1>Body Pawsitive</h1>
-    <p>Classification de race &middot; Segmentation (DeepLabV3 / SAM 2) &middot; D&eacute;tection de pose</p>
+  <div class="header-left">
+    <div>
+      <h1>Body Pawsitive</h1>
+      <p>Classification de race &middot; Segmentation (DeepLabV3 / SAM 2) &middot; D&eacute;tection de pose</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <img src="/static/images/paw_logo.png" alt="Logo">
   </div>
 </header>
 
@@ -376,6 +408,12 @@
     </div>
     <div class="source-footer">
       <button class="btn btn-run" id="btn-run">&#9654;&ensp;Lancer l'inf&eacute;rence</button>
+      <button class="btn btn-preload" id="btn-preload" disabled title="Pr&eacute;-charger les inf&eacute;rences pour toutes les images des datasets">&#128230;&ensp;Pr&eacute;-charger la DB</button>
+      <button class="btn btn-preload-stop" id="btn-preload-stop">&#9632;&ensp;Arr&ecirc;ter</button>
+      <div class="preload-progress-wrap" id="preload-progress-wrap">
+        <div class="preload-bar"><div class="preload-bar-fill" id="preload-bar-fill"></div></div>
+        <span class="preload-info" id="preload-info">0/0</span>
+      </div>
     </div>
   </div>
 
@@ -495,6 +533,7 @@ const $canvas=$("editor-canvas"), $canvasWrap=$("canvas-wrap");
 const $commentInput=$("comment-input"), $commentAdd=$("comment-add"), $commentsList=$("comments-list"), $commentsPanel=$("comments-panel");
 const $hintBar=$("hint-bar"), $histContent=$("history-content"), $toast=$("toast");
 const $actionBar=$("action-bar");
+const $btnPreload=$("btn-preload"), $btnPreloadStop=$("btn-preload-stop"), $preloadWrap=$("preload-progress-wrap"), $preloadFill=$("preload-bar-fill"), $preloadInfo=$("preload-info");
 const ctx = $canvas.getContext("2d");
 
 let datasetsCache = {};
@@ -1044,6 +1083,7 @@ async function runDataset() {
   const d = await r.json();
   if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
   displayResults(d);
+  loadHistory();
 }
 
 async function runUpload() {
@@ -1055,6 +1095,7 @@ async function runUpload() {
   const d = await r.json();
   if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
   displayResults(d);
+  loadHistory();
 }
 
 /* ── Display results ─────────────────────────────────── */
@@ -1353,13 +1394,18 @@ function applyImportedAnnotations(data) {
 
 /* ── History ─────────────────────────────────────────── */
 let _historyRuns = [];
+let _historyTotal = 0;
+let _historyPage = 1;
+let _historyPageSize = 50;
 const _historySelected = new Set();
 
 async function loadHistory() {
   try {
-    const r = await fetch("/api/history");
-    _historyRuns = await r.json();
-    // Drop selected ids that no longer exist
+    const offset = (_historyPage - 1) * _historyPageSize;
+    const r = await fetch(`/api/history?limit=${_historyPageSize}&offset=${offset}`);
+    const data = await r.json();
+    _historyRuns = data.runs || [];
+    _historyTotal = data.total || 0;
     const ids = new Set(_historyRuns.map(x => x.id));
     for (const id of [..._historySelected]) if (!ids.has(id)) _historySelected.delete(id);
     renderHistory();
@@ -1367,23 +1413,26 @@ async function loadHistory() {
 }
 
 function renderHistory() {
-  if (!_historyRuns.length) {
+  if (!_historyRuns.length && _historyPage === 1) {
     $histContent.innerHTML = '<div class="history-empty">Aucune inference enregistree.</div>';
     return;
   }
-  const total = _historyRuns.length, sel = _historySelected.size;
-  const allSelected = sel === total && total > 0;
+  const total = _historyTotal, sel = _historySelected.size;
+  const shown = _historyRuns.length;
+  const allSelected = sel === shown && shown > 0;
+  const totalPages = Math.max(1, Math.ceil(total / _historyPageSize));
   let html = `
     <div class="history-toolbar">
-      <span class="ht-info"><b>${total}</b> run${total>1?"s":""} · <b>${sel}</b> sélectionné${sel>1?"s":""}</span>
-      <button class="ht-link" id="ht-select-all">Tout sélectionner</button>
+      <span class="ht-info"><b>${total}</b> run${total>1?"s":""} · page <b>${_historyPage}</b>/${totalPages} · <b>${sel}</b> s&eacute;lectionn&eacute;${sel>1?"s":""}</span>
+      <button class="ht-link" id="ht-select-all">Tout s&eacute;lectionner</button>
       <button class="ht-link" id="ht-select-none">Aucun</button>
       <span class="ht-spacer"></span>
       <button class="ht-bulk-del" id="ht-bulk-del" ${sel===0?"disabled":""}>&#128465;&ensp;Supprimer ${sel>0?`(${sel})`:""}</button>
     </div>
+    <div class="history-table-wrap" id="history-table-wrap">
     <table class="history-table"><thead><tr>
       <th style="width:32px;"><input type="checkbox" class="select-all" id="ht-checkall" ${allSelected?"checked":""}></th>
-      <th>#</th><th>Date</th><th>Image</th><th>Race prédite</th><th>Conf.</th><th>Backend</th><th>Ann.</th><th>Actions</th>
+      <th>#</th><th>Date</th><th>Image</th><th>Race pr&eacute;dite</th><th>Conf.</th><th>Backend</th><th>Ann.</th><th>Actions</th>
     </tr></thead><tbody>`;
   for (const r of _historyRuns) {
     const dt = r.created_at ? new Date(r.created_at).toLocaleString("fr-FR") : "—";
@@ -1406,10 +1455,28 @@ function renderHistory() {
       </td>
     </tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
+
+  html += '<div class="pagination">';
+  html += `<button class="pg-btn" id="pg-first" ${_historyPage<=1?"disabled":""}>&laquo; D&eacute;but</button>`;
+  html += `<button class="pg-btn" id="pg-prev" ${_historyPage<=1?"disabled":""}>&lsaquo; Pr&eacute;c.</button>`;
+
+  const maxButtons = 5;
+  let startPage = Math.max(1, _historyPage - Math.floor(maxButtons / 2));
+  let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+  if (endPage - startPage + 1 < maxButtons) startPage = Math.max(1, endPage - maxButtons + 1);
+
+  for (let p = startPage; p <= endPage; p++) {
+    html += `<button class="pg-btn${p===_historyPage?" pg-active":""}" data-page="${p}">${p}</button>`;
+  }
+
+  html += `<button class="pg-btn" id="pg-next" ${_historyPage>=totalPages?"disabled":""}>Suiv. &rsaquo;</button>`;
+  html += `<button class="pg-btn" id="pg-last" ${_historyPage>=totalPages?"disabled":""}>Fin &raquo;</button>`;
+  html += `<span class="pg-info">${(_historyPage-1)*_historyPageSize+1}&ndash;${Math.min(_historyPage*_historyPageSize, total)} / ${total}</span>`;
+  html += '</div>';
+
   $histContent.innerHTML = html;
 
-  // Wire toolbar
   $("ht-select-all").addEventListener("click", () => {
     _historyRuns.forEach(r => _historySelected.add(r.id));
     renderHistory();
@@ -1424,7 +1491,6 @@ function renderHistory() {
     renderHistory();
   });
   $("ht-bulk-del").addEventListener("click", bulkDeleteSelected);
-  // Wire row checkboxes
   $histContent.querySelectorAll("input.row-select").forEach(cb => {
     cb.addEventListener("change", e => {
       const id = parseInt(e.target.dataset.id, 10);
@@ -1432,6 +1498,14 @@ function renderHistory() {
       else _historySelected.delete(id);
       renderHistory();
     });
+  });
+
+  $("pg-first")?.addEventListener("click", () => { _historyPage = 1; loadHistory(); });
+  $("pg-prev")?.addEventListener("click", () => { if (_historyPage > 1) { _historyPage--; loadHistory(); } });
+  $("pg-next")?.addEventListener("click", () => { if (_historyPage < totalPages) { _historyPage++; loadHistory(); } });
+  $("pg-last")?.addEventListener("click", () => { _historyPage = totalPages; loadHistory(); });
+  $histContent.querySelectorAll(".pg-btn[data-page]").forEach(btn => {
+    btn.addEventListener("click", () => { _historyPage = parseInt(btn.dataset.page, 10); loadHistory(); });
   });
 }
 
@@ -1472,7 +1546,101 @@ async function deleteRun(id) {
   } catch (e) { toast("Erreur : " + e.message, "err"); }
 }
 
-document.addEventListener("DOMContentLoaded", () => { updateSam2State(); loadDatasets(); loadHistory(); });
+/* ── Preload DB ──────────────────────────────────────── */
+let _preloadPollTimer = null;
+
+async function checkPreloadStatus() {
+  try {
+    const r = await fetch("/api/preload/status");
+    const d = await r.json();
+    if (d.running) {
+      $btnPreload.style.display = "none";
+      $btnPreloadStop.style.display = "inline-block";
+      $preloadWrap.classList.add("active");
+      const prog = d.progress || {};
+      const total = prog.total || d.remaining || 0;
+      const done = prog.processed || 0;
+      const pct = total > 0 ? Math.round(done / total * 100) : 0;
+      $preloadFill.style.width = pct + "%";
+      $preloadInfo.textContent = prog.message || `${done}/${total}`;
+      if (!_preloadPollTimer) {
+        _preloadPollTimer = setInterval(checkPreloadStatus, 1500);
+      }
+    } else {
+      if (_preloadPollTimer) {
+        clearInterval(_preloadPollTimer);
+        _preloadPollTimer = null;
+      }
+      $preloadWrap.classList.remove("active");
+      $preloadFill.style.width = "0%";
+      $preloadInfo.textContent = "";
+      $btnPreloadStop.style.display = "none";
+      $btnPreload.style.display = "inline-block";
+      $btnPreload.disabled = d.complete;
+      if (d.complete) {
+        $btnPreload.title = "Base de donn\u00e9es compl\u00e8tement charg\u00e9e";
+      } else {
+        $btnPreload.title = "Pr\u00e9-charger les inf\u00e9rences pour toutes les images des datasets";
+      }
+    }
+  } catch (e) {
+    $btnPreload.disabled = true;
+  }
+}
+
+async function startPreload() {
+  const segBackend = getBackend();
+  const sam2Mode = getSam2();
+  try {
+    const r = await fetch("/api/preload/start", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ seg_backend: segBackend, sam2_mode: sam2Mode }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || "Erreur", "err"); return; }
+    $btnPreload.style.display = "none";
+    $btnPreloadStop.style.display = "inline-block";
+    $preloadWrap.classList.add("active");
+    $preloadInfo.textContent = "D\u00e9marrage\u2026";
+    _preloadPollTimer = setInterval(checkPreloadStatus, 1500);
+    toast("Pr\u00e9-chargement d\u00e9marr\u00e9\u2026");
+  } catch (e) { toast("Erreur : " + e.message, "err"); }
+}
+
+$btnPreload.addEventListener("click", startPreload);
+
+async function stopPreload() {
+  try {
+    const r = await fetch("/api/preload/stop", { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || "Erreur", "err"); return; }
+    $btnPreloadStop.disabled = true;
+    $preloadInfo.textContent = "Arr\u00eat en cours\u2026";
+    toast("Arr\u00eat du pr\u00e9-chargement\u2026");
+  } catch (e) { toast("Erreur : " + e.message, "err"); }
+}
+
+$btnPreloadStop.addEventListener("click", stopPreload);
+
+document.addEventListener("DOMContentLoaded", () => {
+  updateSam2State();
+  loadDatasets();
+  loadHistory();
+  checkPreloadStatus();
+
+  const $heightSlider = $("hist-height-slider");
+  const $heightVal = $("hist-height-val");
+  $heightSlider.addEventListener("input", () => {
+    const v = parseInt($heightSlider.value, 10);
+    $heightVal.textContent = v === 0 ? "Min" : v + "px";
+    const wrap = document.getElementById("history-table-wrap");
+    if (wrap) {
+      if (v === 0) wrap.classList.add("collapsed");
+      else { wrap.classList.remove("collapsed"); wrap.style.maxHeight = v + "px"; }
+    }
+  });
+});
 </script>
 </body>
 </html>
