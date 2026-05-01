@@ -90,7 +90,7 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 2. [Setup & Installation](#setup--installation)
 3. [Training](#training)
 4. [Inference](#inference)
-5. [Application web Flask](#application-web-flask)
+5. [Application web](#application-web)
 6. [Evaluation Notebooks](#evaluation-notebooks)
 7. [Architecture & Module Reference](#architecture--module-reference)
 8. [Configuration Reference](#configuration-reference)
@@ -102,14 +102,18 @@ bcs_determination/
 ├── configs/
 │   ├── config.yaml                        # Classification Hydra config (Stanford Dogs, 120 races)
 │   ├── config_dogs_cats.yaml              # Classification combinée (132 races, chiens + chats)
+│   ├── config_dogs_cats_vit.yaml          # Classification ViT (132 races, chiens + chats)
 │   └── config_segmentation.yaml           # Segmentation Hydra config
 ├── src/
 │   └── bcs_pipeline/                      # Main Python package
 │       ├── __init__.py
+│       ├── app_checkpoints.py             # Single source of truth pour les chemins de checkpoints
+│       ├── datasets.py                    # Constantes datasets, collecte d'images, résolution de chemins
+│       ├── inference_format.py            # Orchestration inference + formatage résultat (partagé app/script)
 │       ├── callbacks.py                   # Callback factories
 │       ├── loggers.py                     # Logger factories (TensorBoard, W&B)
 │       ├── trainer_factory.py             # High-level Trainer builder
-│       ├── db.py                          # SQLAlchemy models (runs + annotations + masques édités)
+│       ├── db.py                          # SQLAlchemy models + session_scope context manager
 │       ├── inference/                     # Shared inference utilities
 │       │   ├── __init__.py                # Public API re-exports
 │       │   ├── classification.py          # ResNet/ViT breed prediction (+ load_combined_class_names)
@@ -117,7 +121,8 @@ bcs_determination/
 │       │   ├── segmentation_sam2.py       # SAM 2 zero-shot segmentation (2 classes)
 │       │   ├── pose.py                    # YOLOv8 keypoint detection
 │       │   ├── visualization.py           # PIL overlay rendering
-│       │   └── pipeline.py                # Combined orchestrator
+│       │   ├── pipeline.py                # Combined orchestrator
+│       │   └── coco_export.py             # Export COCO JSON + polygon masks
 │       ├── data/
 │       │   ├── stanford_classification_datamodule.py
 │       │   ├── stanford_segmentation_datamodule.py
@@ -134,9 +139,12 @@ bcs_determination/
 │           ├── config_utils.py
 │           ├── config_validation.py
 │           ├── dataset_stats.py
+│           ├── device.py                  # GPU/CPU/MPS auto-detection
 │           └── logging_utils.py
 ├── templates/
 │   └── index.html                         # FastAPI UI (single-page) — édition annotations + masque
+├── static/
+│   └── images/                            # Logo et favicon
 ├── notebooks/
 │   ├── combined_inference_overlay.ipynb   # Widget interactif (même logique que l'app)
 │   ├── evaluate_vit_classification_Stanford_Dogs.ipynb
@@ -150,26 +158,23 @@ bcs_determination/
 ├── data/
 │   ├── stanford_dogs/                     # 120 breed folders (sous images/Images/)
 │   ├── Oxford-IIIT_pet_dataset/           # Pet images + trimaps (chats utilisés pour le combiné)
-│   ├── Reddit_example/                    # Out-of-distribution webp images (téléchargées automatiquement)
-│   │   ├── reddit_dog_1.jpg               #   Image Reddit #1
-│   │   └── reddit_dog_2.jpg               #   Image Reddit #2
-│   ├── Dog_Pose_Estimations/              # YOLOv8 pose training data
-│   ├── outputs/                           # JSON + PNG de chaque run sauvé (run_<id>.json, run_<id>_mask.png)
+│   ├── Reddit_example/                    # Out-of-distribution images (téléchargées automatiquement)
+│   ├── outputs/                           # JSON + PNG de chaque run (run_<id>.json, run_<id>_mask.png)
 │   └── bcs_app.db                         # SQLite — historique des runs et annotations utilisateur
-├── experiments/                           # Auto-generated (checkpoints, TB logs, splits)
-│   ├── resnet50_dogs_cats/                # Classifieur 132 races (chiens + chats) — modèle utilisé par l'app
-│   ├── resnet50_adam_cosine_annealing/    # Legacy — ancien classifieur 120 races (chiens seuls)
-│   ├── vit_adam_cosine_annealing/
-│   └── deeplabv3_resnet50_adam_cosine_annealing/
-├── checkpoints/                           # SAM 2 foundation model weights
-├── runs/pose/                             # YOLOv8 pose training outputs
+├── checkpoints/                           # Modèles entraînés + SAM 2 weights
+│   ├── classification/
+│   │   └── vit_dogs_cats/last.ckpt        # Classifieur actif (ViT, 132 classes)
+│   ├── segmentation/
+│   │   ├── deeplabv3_resnet50_last-v1.ckpt
+│   │   └── sam2.1_hiera_large.pt
+│   └── pose/
+│       └── yolo_best.pt
+├── scripts/
+│   ├── setup_and_run.sh                   # Bootstrap : uv venv + données + checkpoints + lancement
+│   └── preload_db.py                      # Pré-chargement DB : inférences sur toutes les images
 ├── train.py                               # Training entry-point
 ├── inference.py                           # CLI inference
 ├── app.py                                 # FastAPI/Uvicorn web app (UI interactive)
-├── setup_and_run.sh                       # Bootstrap : uv venv + données + checkpoints + lancement
-├── scripts/
-│   ├── setup_and_run.sh                   # (idem, dans scripts/)
-│   └── preload_db.py                      # Pré-chargement DB : inférences sur toutes les images
 ├── environment.yaml
 ├── Dockerfile
 └── README.md
@@ -179,8 +184,8 @@ bcs_determination/
 
 | Principle | How it's applied |
 |---|---|
-| **Modularity** | Each concern (callbacks, loggers, trainer, inference) is in its own module. |
-| **Reusability** | `bcs_pipeline.inference` is shared by `inference.py`, `app.py`, and notebooks. |
+| **Modularity** | Each concern (callbacks, loggers, trainer, inference, datasets, DB) is in its own module. |
+| **Reusability** | `bcs_pipeline.inference` is shared by `inference.py`, `app.py`, and notebooks. `datasets.py` and `inference_format.py` are shared between `app.py` and `scripts/preload_db.py`. |
 | **Lightweight entry-points** | `train.py`, `inference.py`, and `app.py` contain only orchestration — no business logic. |
 | **Configuration-driven** | All hyperparameters live in `configs/config.yaml` and can be overridden via CLI. |
 
@@ -417,6 +422,41 @@ Lightweight Hydra-decorated entry-point.  Steps:
 | `save_visualization(image, path)` | Save visualization PNG to disk |
 | `run_full_inference(image, ...)` | Combined orchestrator (all 3 pipelines) |
 
+### `bcs_pipeline.datasets`
+
+Centralise les chemins et la logique de découverte des datasets, partagée entre `app.py` et `scripts/preload_db.py`.
+
+| Function | Purpose |
+|---|---|
+| `collect_all_images()` | Liste toutes les images `(path, dataset, group, ground_truth)` |
+| `get_datasets()` | Retourne les groupes et fichiers par dataset (pour l'UI) |
+| `resolve_image_path(dataset, group, filename)` | Résout le chemin complet d'une image |
+| `ground_truth(dataset, group)` | Retourne le label de vérité terrain |
+| `list_image_files(folder)` | Liste les fichiers image dans un dossier |
+
+### `bcs_pipeline.inference_format`
+
+Orchestration partagée du pipeline d'inférence et formatage du résultat.
+
+| Function | Purpose |
+|---|---|
+| `run_core_inference(cls_model, ..., img)` | Exécute classification + segmentation + pose |
+| `format_inference_result(cls, seg, pose, ...)` | Formate les résultats en dict standardisé |
+
+### `bcs_pipeline.db`
+
+Modèles SQLAlchemy + helpers de persistance.
+
+| Function | Purpose |
+|---|---|
+| `init_db(db_path)` | Initialise la DB (create_all + migrations) |
+| `session_scope(session_factory)` | Context manager : rollback on error, close toujours |
+| `save_run(session, ...)` | Persiste un run (idempotent via contrainte unique) |
+| `save_annotations(session, run_id, ...)` | Sauvegarde les annotations utilisateur |
+| `load_run(session, run_id)` | Charge un run complet (JSON + annotations) |
+| `list_runs(session, limit, offset)` | Liste résumé des runs (paginé) |
+| `delete_run(session, run_id)` | Supprime un run + fichiers associés |
+
 ### `bcs_pipeline.lightning_module.LitClassificationModule`
 
 Full-featured `LightningModule` with:
@@ -460,36 +500,54 @@ Segmentation `LightningModule` (DeepLabV3-ResNet50) with:
 
 ---
 
-## Application web Flask
+## Application web
 
-`app.py` fournit une **interface web interactive** qui réplique le widget du notebook `combined_inference_overlay.ipynb` directement dans le navigateur. Elle permet d'explorer visuellement les résultats des trois pipelines sur toutes les images des datasets locaux.
+`app.py` fournit une **interface web interactive** (FastAPI + Uvicorn) qui réplique le widget du notebook `combined_inference_overlay.ipynb` directement dans le navigateur. Elle permet d'explorer visuellement les résultats des trois pipelines sur toutes les images des datasets locaux ou sur des images uploadées.
+
+### Lancement rapide
+
+```bash
+# Option 1 : via le script de setup (recommandé, gère tout automatiquement)
+chmod +x scripts/setup_and_run.sh
+./scripts/setup_and_run.sh                    # setup complet + lancement
+./scripts/setup_and_run.sh --preload          # idem + pré-chargement de la DB
+./scripts/setup_and_run.sh --skip-env         # si .venv/ existe déjà
+./scripts/setup_and_run.sh --skip-data        # si les données sont déjà téléchargées
+./scripts/setup_and_run.sh --cpu              # forcer CPU (pas de GPU)
+./scripts/setup_and_run.sh --no-launch        # setup sans lancer l'app
+
+# Option 2 : manuellement (venv existant)
+source .venv/bin/activate
+python app.py
+# → Ouvrir http://localhost:5000
+```
+
+> Les modèles sont chargés en mémoire au premier appel d'inférence (lazy loading). Le premier run est plus lent, les suivants sont instantanés.
 
 ### Fonctionnalités
 
 - **Sélection de dataset** : Reddit (out-of-distribution), Stanford Dogs (120 races), Oxford-IIIT Pet (chiens + chats)
-- **Sélection d'image** : navigation par race/groupe puis par fichier
+- **Upload d'image** : glisser-déposer ou sélection de fichier (JPG, PNG, WebP)
 - **Choix du backend de segmentation** : DeepLabV3 (fine-tuned) ou SAM 2 (zero-shot)
 - **3 modes SAM 2** : `prompted` (point central), `automatic` (grille dense), `pose_prompted` (bbox + keypoints YOLO)
-- **Affichage côte à côte** : image source / overlay avec segmentation + pose + label de classification
-- **Observations textuelles** : top-5 races, distribution des classes de segmentation, nombre de détections de pose
-
-### Lancement
-
-```bash
-conda activate bcs_analysis
-python app.py
-```
-
-Ouvrir **http://localhost:5000** dans un navigateur.
-
-> Les modèles sont chargés en mémoire au premier appel d'inférence (lazy loading). Le premier run est plus lent, les suivants sont instantanés.
+- **Affichage côte à côte** : image source / overlay interactif avec segmentation + pose + label de classification
+- **Édition d'annotations** :
+  - Déplacer les keypoints et les coins des bounding boxes par glisser-déposer
+  - Éditer le masque de segmentation avec un pinceau (ajouter au foreground) et une gomme (repasser en background)
+  - Ajouter des commentaires textuels sur chaque inférence
+- **Historique des inférences** : tableau paginé avec chargement, suppression (unitaire ou par lot), et indicateur d'annotations
+- **Export** : PNG de l'overlay, JSON des annotations (avec masque édité encodé en base64)
+- **Import** : charger un fichier JSON d'annotations pour appliquer les corrections
+- **Pré-chargement de la DB** : bouton dans l'interface pour lancer/arrêter le pré-chargement de toutes les images
 
 ### Pré-chargement de la base de données
 
-Le script `scripts/preload_db.py` permet de **pré-calculer toutes les inférences** pour les images des datasets (Stanford Dogs, Oxford-IIIT Pet, Reddit) et de les stocker en base SQLite. Ainsi, l'interface web n'a pas à recalculer les résultats à la demande.
+Le pré-chargement peut être fait **depuis l'interface web** (bouton "Pré-charger la DB" avec bouton "Arrêter" pour stopper en cours) ou **en ligne de commande** via `scripts/preload_db.py`.
+
+La DB est stockée dans `data/bcs_app.db` (SQLite). Une contrainte d'unicité sur `(image_name, dataset, group_name, seg_backend)` garantit qu'il n'y a pas de doublons — le pré-chargement est idempotent et peut être arrêté/repris sans perte de données.
 
 ```bash
-# Pré-charger avec les paramètres par défaut (DeepLabV3, top-5)
+# CLI : pré-charger avec les paramètres par défaut (DeepLabV3, top-5)
 python scripts/preload_db.py
 
 # Forcer le re-traitement d'images déjà en base
@@ -502,7 +560,7 @@ python scripts/preload_db.py --seg-backend sam2 --sam2-mode automatic
 python scripts/preload_db.py --datasets Reddit
 
 # Via setup_and_run.sh (après le setup)
-./setup_and_run.sh --preload
+./scripts/setup_and_run.sh --preload
 ```
 
 | Option | Défaut | Description |
@@ -515,8 +573,6 @@ python scripts/preload_db.py --datasets Reddit
 | `--force` | — | Re-traiter les images déjà en base |
 | `--datasets` | tous | Limiter à certains datasets |
 
-Le script est **idempotent** : les images déjà présentes en base sont ignorées (sauf `--force`). Chaque résultat inclut l'origine (`source_type="dataset"`, `dataset`, `group_name`) pour distinguer les images de dataset des uploads utilisateur.
-
 ### Points d'accès API
 
 | Route | Méthode | Description |
@@ -525,7 +581,15 @@ Le script est **idempotent** : les images déjà présentes en base sont ignoré
 | `GET /api/datasets` | — | Liste les datasets, groupes et nombre d'images |
 | `GET /api/images?dataset=&group=` | — | Liste les fichiers d'un groupe |
 | `GET /api/thumbnail/<dataset>/<group>/<file>` | — | Sert un thumbnail JPEG (256 px) |
-| `POST /api/inference` | JSON body | Lance les 3 pipelines, retourne les images base64 + observations |
+| `POST /api/inference` | JSON body | Lance les 3 pipelines sur une image de dataset |
+| `POST /api/inference/upload` | multipart | Lance les 3 pipelines sur une image uploadée |
+| `GET /api/history` | — | Liste paginée des runs (historique) |
+| `GET /api/history/<id>` | — | Détail d'un run (images base64 + annotations) |
+| `POST /api/history/<id>/annotations` | JSON body | Sauvegarde les annotations éditées (boxes, keypoints, masque, commentaires) |
+| `DELETE /api/history/<id>` | — | Supprime un run et ses fichiers associés |
+| `GET /api/preload/status` | — | État du pré-chargement (progression, compteur DB) |
+| `POST /api/preload/start` | JSON body | Lance le pré-chargement en arrière-plan |
+| `POST /api/preload/stop` | — | Arrête le pré-chargement en cours |
 
 Exemple d'appel API programmatique :
 
@@ -535,7 +599,7 @@ import requests
 resp = requests.post("http://localhost:5000/api/inference", json={
     "dataset": "Reddit",
     "group": "all",
-    "filename": "is-my-dog-overweight-v0-am4q7ltvecng1.webp",
+    "filename": "reddit_dog_1.jpg",
     "seg_backend": "sam2",
     "sam2_mode": "pose_prompted",
 })

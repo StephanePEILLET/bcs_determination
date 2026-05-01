@@ -254,6 +254,11 @@ def save_run(
             "save_run: run already exists for %s/%s/%s/%s → returning #%d",
             image_name, dataset, group_name, seg_backend, existing.id,
         )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / f"run_{existing.id}.json"
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False)
+        logger.info("Refreshed JSON for existing run #%d", existing.id)
         return existing
 
     output_dir.mkdir(parents=True, exist_ok=True)

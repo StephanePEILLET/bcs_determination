@@ -27,7 +27,7 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, File, Form, Query, UploadFile
