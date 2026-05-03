@@ -35,7 +35,7 @@ section() { echo -e "\n${CYAN}${BOLD}━━━ $* ━━━${NC}\n"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-PYTHON_VERSION="3.10"
+# Python version is pinned in `.python-version` (read by `uv` automatically).
 
 # URLs des données
 STANFORD_URL="http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar"
@@ -51,6 +51,9 @@ STANFORD_DIR="$DATA_DIR/stanford_dogs/images"
 OXFORD_DIR="$DATA_DIR/Oxford-IIIT_pet_dataset"
 REDDIT_DIR="$DATA_DIR/Reddit_example"
 SAM2_CKPT="$SCRIPT_DIR/checkpoints/segmentation/sam2.1_hiera_large.pt"
+SAM3_CKPT="$SCRIPT_DIR/checkpoints/segmentation/sam3_image_model.pt"
+SAM3_BPE="$SCRIPT_DIR/checkpoints/segmentation/bpe_simple_vocab_16e6.txt.gz"
+SAM3_HF_REPO="facebook/sam3"
 
 # GPU détecté (set in detect_gpu)
 GPU_TYPE="cpu"
@@ -175,92 +178,30 @@ ensure_uv() {
 setup_env() {
     if [[ "$SKIP_ENV" == true ]]; then
         warn "Étape environnement ignorée (--skip-env)"
-        if [[ -f ".venv/bin/activate" ]]; then
-            # shellcheck disable=SC1091
-            source .venv/bin/activate
-        fi
         return 0
     fi
 
     section "Configuration de l'environnement Python"
 
-    # Crée le venv
-    if [[ ! -d ".venv" ]]; then
-        info "Création du virtualenv Python $PYTHON_VERSION ..."
-        uv venv --python "$PYTHON_VERSION" .venv
-        success "Virtualenv créé (.venv/)"
-    else
-        success "Virtualenv .venv/ existe déjà"
-    fi
-
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
-
-    # ── Installation PyTorch avec le bon backend GPU ─────────────────────────
-    info "Installation de PyTorch (backend: ${BOLD}$GPU_TYPE${NC}) ..."
-
-    case "$GPU_TYPE" in
-        cuda)
-            # Détecte la version CUDA installée pour choisir le bon index
-            local cuda_major
-            cuda_major=$(nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[0-9]+' | head -1 || echo "11")
-            if [[ "$cuda_major" -ge 12 ]]; then
-                info "CUDA ≥ 12 détecté → cu124"
-                uv pip install --quiet \
-                    torch torchvision torchaudio \
-                    --index-url https://download.pytorch.org/whl/cu124
-            else
-                info "CUDA < 12 → cu118"
-                uv pip install --quiet \
-                    torch torchvision torchaudio \
-                    --index-url https://download.pytorch.org/whl/cu118
-            fi
-            ;;
-        mps|cpu)
-            # Sur macOS (MPS) et CPU, le build par défaut de PyPI suffit
-            # MPS est automatiquement disponible avec torch >= 2.0 sur Apple Silicon
-            uv pip install --quiet torch torchvision torchaudio
-            ;;
-    esac
-    success "PyTorch installé"
-
-    # ── Installation du projet ───────────────────────────────────────────────
-    info "Installation du projet (pyproject.toml + extras dev) ..."
-    uv pip install --quiet -e ".[dev]"
-    success "Projet bcs-pipeline installé"
-
-    # ── Dépendances supplémentaires ──────────────────────────────────────────
-    # Packages présents dans environment.yaml ou utilisés dans le code
-    # mais absents du pyproject.toml
-    info "Installation des dépendances supplémentaires ..."
-    uv pip install --quiet \
-        python-multipart \
-        scikit-learn \
-        seaborn \
-        pandas \
-        tensorboard \
-        flask \
-        hydra-optuna-sweeper \
-        sqlalchemy \
-        jinja2 \
-        sam2 \
-        scipy \
-        opencv-python-headless
-    success "Dépendances supplémentaires installées"
+    # `uv sync` lit .python-version + pyproject.toml et résout :
+    #   - le venv (.venv/) — créé si absent
+    #   - PyTorch (sur Linux : cu124 via tool.uv.sources, sinon PyPI default)
+    #   - toutes les deps runtime + extras [dev,sam3]
+    info "Synchronisation de l'environnement (uv sync --extra dev --extra sam3) ..."
+    uv sync --extra dev --extra sam3
+    success "Environnement synchronisé"
 
     # ── Vérification des imports + device GPU ────────────────────────────────
     info "Vérification des imports et du device ..."
-    python -c "
+    uv run --no-sync python -c "
 import torch
 import pytorch_lightning
 import fastapi
 import sqlalchemy
 
-# Détection du device
 if torch.cuda.is_available():
     device = 'cuda'
-    gpu_name = torch.cuda.get_device_name(0)
-    print(f'  🟢 GPU CUDA : {gpu_name}')
+    print(f'  🟢 GPU CUDA : {torch.cuda.get_device_name(0)}')
     print(f'  CUDA {torch.version.cuda}  |  cuDNN {torch.backends.cudnn.version()}')
 elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
     device = 'mps'
@@ -351,7 +292,46 @@ download_data() {
     download "$REDDIT_IMG2_URL" "$REDDIT_DIR/reddit_dog_2.jpg"
 
     # ── SAM 2.1 checkpoint ───────────────────────────────────────────────────
-    download "$SAM2_CKPT_URL" "$SAM2_CKPT"
+    if [[ -f "$SAM2_CKPT" ]]; then
+        success "SAM 2.1 checkpoint déjà présent"
+    else
+        local found_sam2
+        found_sam2="$(find checkpoints/ -name 'sam2.1_hiera_large.pt' -type f 2>/dev/null | head -1)" || true
+        if [[ -n "$found_sam2" ]]; then
+            mkdir -p "$(dirname "$SAM2_CKPT")"
+            ln -sf "$(cd "$(dirname "$found_sam2")" && pwd)/$(basename "$found_sam2")" "$SAM2_CKPT"
+            success "SAM 2.1 checkpoint trouvé dans ${found_sam2} → lien créé"
+        else
+            download "$SAM2_CKPT_URL" "$SAM2_CKPT"
+        fi
+    fi
+
+    # ── SAM 3 checkpoint (HuggingFace, auth-gated) ───────────────────────────
+    # Optionnel : SAM 3 nécessite Python ≥ 3.12 et `hf auth login`.
+    # On télécharge dans checkpoints/segmentation/sam3/ puis on crée des liens
+    # symboliques vers les fichiers attendus (sam3_image_model.pt + BPE vocab).
+    if [[ -f "$SAM3_CKPT" ]]; then
+        success "SAM 3 checkpoint déjà présent"
+    else
+        if command -v hf >/dev/null 2>&1; then
+            info "Téléchargement de SAM 3 depuis HuggingFace ${SAM3_HF_REPO} (hf auth login requis)..."
+            mkdir -p "$(dirname "$SAM3_CKPT")/sam3"
+            if hf download "$SAM3_HF_REPO" --local-dir "$(dirname "$SAM3_CKPT")/sam3" 2>/dev/null; then
+                # Liens symboliques vers les fichiers attendus
+                local found_sam3_ckpt found_sam3_bpe
+                found_sam3_ckpt="$(find "$(dirname "$SAM3_CKPT")/sam3" -name '*.pt' -o -name '*.pth' 2>/dev/null | head -1)" || true
+                found_sam3_bpe="$(find "$(dirname "$SAM3_CKPT")/sam3" -name 'bpe_simple_vocab_16e6.txt.gz' 2>/dev/null | head -1)" || true
+                [[ -n "$found_sam3_ckpt" ]] && ln -sf "$found_sam3_ckpt" "$SAM3_CKPT"
+                [[ -n "$found_sam3_bpe"  ]] && ln -sf "$found_sam3_bpe"  "$SAM3_BPE"
+                [[ -f "$SAM3_CKPT" ]] && success "SAM 3 checkpoint installé" \
+                                     || warn "SAM 3 téléchargé mais aucun .pt détecté — vérifier $(dirname "$SAM3_CKPT")/sam3"
+            else
+                warn "SAM 3 désactivé : 'hf download ${SAM3_HF_REPO}' a échoué (auth requise ?)."
+            fi
+        else
+            warn "SAM 3 désactivé : installer huggingface_hub (\`pip install huggingface_hub\`) et faire \`hf auth login\` pour activer."
+        fi
+    fi
 
     # ── Checkpoints entraînés ────────────────────────────────────────────────
     echo ""
@@ -386,7 +366,7 @@ preload_database() {
 
     section "Pré-chargement de la base de données"
     info "Lancement du pré-chargement des inférences ..."
-    python scripts/preload_db.py
+    uv run python scripts/preload_db.py
     success "Base de données pré-chargée"
 }
 
@@ -396,7 +376,7 @@ preload_database() {
 launch_app() {
     if [[ "$NO_LAUNCH" == true ]]; then
         warn "Lancement ignoré (--no-launch)"
-        success "Setup terminé. Lancez : source .venv/bin/activate && python app.py"
+        success "Setup terminé. Lancez : uv run python app.py"
         return 0
     fi
 
@@ -404,7 +384,7 @@ launch_app() {
     info "Device : ${BOLD}$GPU_TYPE${NC}"
     info "URL    : ${BOLD}http://localhost:5000${NC}"
     info "Ctrl+C pour arrêter.\n"
-    python app.py
+    uv run python app.py
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

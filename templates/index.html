@@ -380,11 +380,15 @@
         <div class="field"><label>Image</label><select id="sel-image" disabled><option value="">&mdash;</option></select></div>
         <div class="field">
           <label>Segmentation</label>
-          <select id="sel-backend"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
+          <select id="sel-backend"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option><option value="sam3">SAM 3 (zero-shot, race-aware)</option></select>
         </div>
         <div class="field">
           <label>SAM 2 mode</label>
           <select id="sel-sam2-mode"><option value="prompted">prompted (centre)</option><option value="automatic">automatic (grille)</option><option value="pose_prompted" selected>pose_prompted</option></select>
+        </div>
+        <div class="field">
+          <label>SAM 3 mode</label>
+          <select id="sel-sam3-mode"><option value="prompted">prompted (centre)</option><option value="pose_prompted">pose_prompted</option><option value="concept_prompted">concept_prompted (race)</option><option value="pose_concept_prompted" selected>pose_concept_prompted</option></select>
         </div>
       </div>
     </div>
@@ -398,11 +402,15 @@
       <div class="controls-grid" style="margin-top:12px;">
         <div class="field">
           <label>Segmentation</label>
-          <select id="sel-backend-up"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option></select>
+          <select id="sel-backend-up"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option><option value="sam3">SAM 3 (zero-shot, race-aware)</option></select>
         </div>
         <div class="field">
           <label>SAM 2 mode</label>
           <select id="sel-sam2-up"><option value="prompted">prompted (centre)</option><option value="automatic">automatic (grille)</option><option value="pose_prompted" selected>pose_prompted</option></select>
+        </div>
+        <div class="field">
+          <label>SAM 3 mode</label>
+          <select id="sel-sam3-up"><option value="prompted">prompted (centre)</option><option value="pose_prompted">pose_prompted</option><option value="concept_prompted">concept_prompted (race)</option><option value="pose_concept_prompted" selected>pose_concept_prompted</option></select>
         </div>
       </div>
     </div>
@@ -518,8 +526,8 @@
 const $ = id => document.getElementById(id);
 
 const $dataset=$("sel-dataset"), $group=$("sel-group"), $image=$("sel-image");
-const $backend=$("sel-backend"), $sam2=$("sel-sam2-mode");
-const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up");
+const $backend=$("sel-backend"), $sam2=$("sel-sam2-mode"), $sam3=$("sel-sam3-mode");
+const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up"), $sam3Up=$("sel-sam3-up");
 const $chkSeg=$("chk-seg"), $chkBox=$("chk-boxes"), $chkKpt=$("chk-keypoints");
 const $btnRun=$("btn-run"), $btnPng=$("btn-export-png"), $btnJson=$("btn-export-json"), $btnSave=$("btn-save");
 const $btnImport=$("btn-import-json"), $importFile=$("import-json-file");
@@ -625,7 +633,13 @@ function showResults(v) {
 }
 function getBackend() { return activeTab === "tab-upload" ? $backendUp.value : $backend.value; }
 function getSam2() { return activeTab === "tab-upload" ? $sam2Up.value : $sam2.value; }
-function updateSam2State() { $sam2.disabled = $backend.value !== "sam2"; $sam2Up.disabled = $backendUp.value !== "sam2"; }
+function getSam3() { return activeTab === "tab-upload" ? $sam3Up.value : $sam3.value; }
+function updateSam2State() {
+  $sam2.disabled = $backend.value !== "sam2";
+  $sam2Up.disabled = $backendUp.value !== "sam2";
+  $sam3.disabled = $backend.value !== "sam3";
+  $sam3Up.disabled = $backendUp.value !== "sam3";
+}
 
 /* ── Tool mode ───────────────────────────────────────── */
 function setCursorForTool() {
@@ -1058,7 +1072,13 @@ async function onGroupChange() {
   const res = await fetch(`/api/images?dataset=${encodeURIComponent(ds)}&group=${encodeURIComponent(gr)}`);
   const files = await res.json();
   $image.innerHTML = "";
-  for (const f of files) { const o = document.createElement("option"); o.value = f; o.textContent = f; $image.appendChild(o); }
+  for (const f of files) {
+    const o = document.createElement("option");
+    o.value = f.name;
+    o.textContent = f.annotated ? "\u2705 " + f.name : f.name;
+    if (f.annotated) o.classList.add("annotated");
+    $image.appendChild(o);
+  }
   $image.disabled = !files.length;
 }
 
@@ -1077,7 +1097,7 @@ async function runDataset() {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
       dataset: $dataset.value, group: $group.value, filename: $image.value,
-      seg_backend: getBackend(), sam2_mode: getSam2(),
+      seg_backend: getBackend(), sam2_mode: getSam2(), sam3_mode: getSam3(),
     }),
   });
   const d = await r.json();
@@ -1091,6 +1111,7 @@ async function runUpload() {
   fd.append("file", uploadedFile);
   fd.append("seg_backend", getBackend());
   fd.append("sam2_mode", getSam2());
+  fd.append("sam3_mode", getSam3());
   const r = await fetch("/api/inference/upload", { method: "POST", body: fd });
   const d = await r.json();
   if (!r.ok) { showError(d.error || "Erreur serveur"); return; }
@@ -1341,6 +1362,7 @@ async function saveToDb() {
     const nc = S.comments.length;
     toast(`Sauvegarde OK (run #${currentRunId} — ${nc} commentaire${nc > 1 ? "s" : ""})`);
     loadHistory();
+    onGroupChange();
   } catch (e) { toast("Erreur : " + e.message, "err"); }
   finally { $btnSave.disabled = false; }
 }
@@ -1591,11 +1613,12 @@ async function checkPreloadStatus() {
 async function startPreload() {
   const segBackend = getBackend();
   const sam2Mode = getSam2();
+  const sam3Mode = getSam3();
   try {
     const r = await fetch("/api/preload/start", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ seg_backend: segBackend, sam2_mode: sam2Mode }),
+      body: JSON.stringify({ seg_backend: segBackend, sam2_mode: sam2Mode, sam3_mode: sam3Mode }),
     });
     const d = await r.json();
     if (!r.ok) { toast(d.error || "Erreur", "err"); return; }

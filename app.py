@@ -12,8 +12,8 @@ Usage
 -----
 .. code-block:: bash
 
-    python app.py
-    # Open http://localhost:5000
+    python app.py                  # default port (see DEFAULT_PORT)
+    PORT=8080 python app.py        # custom port via env variable
 
 Served by **Uvicorn** (ASGI).
 """
@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
 import sys
 import threading
 from contextlib import asynccontextmanager
@@ -46,6 +47,8 @@ from bcs_pipeline.app_checkpoints import (
     CLASSIFICATION_CKPT_DIR,
     DEEPLAB_CKPT,
     SAM2_CKPT,
+    SAM3_CKPT,
+    SAM3_BPE,
     POSE_CKPT,
     REPO_ROOT,
     describe_active_models,
@@ -62,6 +65,7 @@ from bcs_pipeline.datasets import (
 )
 from bcs_pipeline.db import (
     InferenceRun,
+    UserAnnotation,
     delete_run as db_delete_run,
     init_db,
     list_runs as db_list_runs,
@@ -126,7 +130,7 @@ _preload_state: dict = {
 }
 
 
-def _preload_worker(seg_backend: str, sam2_mode: str):
+def _preload_worker(seg_backend: str, sam2_mode: str, sam3_mode: str = "pose_concept_prompted"):
     global _preload_state
     try:
         _preload_state["running"] = True
@@ -182,6 +186,7 @@ def _preload_worker(seg_backend: str, sam2_mode: str):
                     img, img_path.name,
                     seg_backend=seg_backend,
                     sam2_mode=sam2_mode,
+                    sam3_mode=sam3_mode,
                 )
 
                 with session_scope(_DB_SESSION) as session:
@@ -247,8 +252,18 @@ def _ensure_classifier():
 
 def _ensure_segmenter(backend: str):
     if backend not in _MODELS["seg"]:
-        ckpt = str(SAM2_CKPT) if backend == "sam2" else str(DEEPLAB_CKPT)
-        _MODELS["seg"][backend] = load_segmentation_backend(backend, ckpt)
+        if backend == "sam2":
+            ckpt = str(SAM2_CKPT)
+            _MODELS["seg"][backend] = load_segmentation_backend(backend, ckpt)
+        elif backend == "sam3":
+            ckpt = str(SAM3_CKPT)
+            bpe = str(SAM3_BPE) if SAM3_BPE.is_file() else None
+            _MODELS["seg"][backend] = load_segmentation_backend(
+                backend, ckpt, sam3_bpe_path=bpe,
+            )
+        else:
+            ckpt = str(DEEPLAB_CKPT)
+            _MODELS["seg"][backend] = load_segmentation_backend(backend, ckpt)
     return _MODELS["seg"][backend]
 
 
@@ -269,6 +284,7 @@ def _run_inference_on_image(
     image_name: str,
     seg_backend: str = "deeplab",
     sam2_mode: str = "prompted",
+    sam3_mode: str = "pose_concept_prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
 ) -> dict:
@@ -279,7 +295,8 @@ def _run_inference_on_image(
 
     cls, seg, pose = run_core_inference(
         cls_model, class_names, seg_handle, seg_backend, pose_model, img,
-        sam2_mode=sam2_mode, top_k=top_k, conf_threshold=conf_threshold,
+        sam2_mode=sam2_mode, sam3_mode=sam3_mode,
+        top_k=top_k, conf_threshold=conf_threshold,
     )
 
     canvas = img.convert("RGB")
@@ -300,6 +317,7 @@ def _run_inference(
     image_path: Path,
     seg_backend: str = "deeplab",
     sam2_mode: str = "prompted",
+    sam3_mode: str = "pose_concept_prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
 ) -> dict:
@@ -308,6 +326,7 @@ def _run_inference(
         img, image_path.name,
         seg_backend=seg_backend,
         sam2_mode=sam2_mode,
+        sam3_mode=sam3_mode,
         top_k=top_k,
         conf_threshold=conf_threshold,
     )
@@ -334,7 +353,21 @@ def api_datasets():
 def api_images(dataset: str = Query(""), group: str = Query("")):
     datasets = get_datasets()
     groups = datasets.get(dataset, {})
-    return groups.get(group, [])
+    files = groups.get(group, [])
+    # Find which images already have annotations saved in the DB
+    annotated_names: set = set()
+    with session_scope(_DB_SESSION) as session:
+        rows = (
+            session.query(InferenceRun.image_name)
+            .join(UserAnnotation, InferenceRun.annotation)
+            .filter(
+                InferenceRun.dataset == dataset,
+                InferenceRun.group_name == group,
+            )
+            .all()
+        )
+        annotated_names = {r[0] for r in rows}
+    return [{"name": f, "annotated": f in annotated_names} for f in files]
 
 
 @app.get("/api/thumbnail/{dataset}/{group}/{filepath:path}")
@@ -358,6 +391,7 @@ async def api_inference(request: Request):
     filename = body.get("filename", "")
     seg_backend = body.get("seg_backend", "deeplab")
     sam2_mode = body.get("sam2_mode", "prompted")
+    sam3_mode = body.get("sam3_mode", "pose_concept_prompted")
     top_k = body.get("top_k", 5)
     conf_threshold = body.get("conf_threshold", 0.25)
 
@@ -370,6 +404,7 @@ async def api_inference(request: Request):
             image_path,
             seg_backend=seg_backend,
             sam2_mode=sam2_mode,
+            sam3_mode=sam3_mode,
             top_k=top_k,
             conf_threshold=conf_threshold,
         )
@@ -398,6 +433,7 @@ async def api_inference_upload(
     file: UploadFile = File(...),
     seg_backend: str = Form("deeplab"),
     sam2_mode: str = Form("prompted"),
+    sam3_mode: str = Form("pose_concept_prompted"),
     top_k: str = Form("5"),
     conf_threshold: str = Form("0.25"),
 ):
@@ -414,6 +450,7 @@ async def api_inference_upload(
             img, file.filename,
             seg_backend=seg_backend,
             sam2_mode=sam2_mode,
+            sam3_mode=sam3_mode,
             top_k=int(top_k),
             conf_threshold=float(conf_threshold),
         )
@@ -523,6 +560,7 @@ async def api_preload_start(request: Request):
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     seg_backend = body.get("seg_backend", "deeplab")
     sam2_mode = body.get("sam2_mode", "prompted")
+    sam3_mode = body.get("sam3_mode", "pose_concept_prompted")
 
     ckpt = resolve_classifier_ckpt()
     if ckpt is None:
@@ -534,7 +572,7 @@ async def api_preload_start(request: Request):
 
     thread = threading.Thread(
         target=_preload_worker,
-        args=(seg_backend, sam2_mode),
+        args=(seg_backend, sam2_mode, sam3_mode),
         daemon=True,
     )
     thread.start()
@@ -549,8 +587,14 @@ def api_preload_stop():
     return {"status": "stopping"}
 
 
+# ── Configuration ───────────────────────────────────────────────────────────
+DEFAULT_PORT = 5000
+# Override at runtime with:  PORT=8080 python app.py
+# ────────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    logger.info("Starting Body Pawsitive on http://localhost:5000 (Uvicorn ASGI)")
+    port = int(os.environ.get("PORT", DEFAULT_PORT))
+    logger.info("Starting Body Pawsitive on http://localhost:%d (Uvicorn ASGI)", port)
     for line in describe_active_models().splitlines():
         logger.info(line)
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=port)

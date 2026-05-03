@@ -27,6 +27,7 @@ def run_core_inference(
     pose_model,
     img: Image.Image,
     sam2_mode: str = "prompted",
+    sam3_mode: str = "pose_concept_prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
 ) -> tuple:
@@ -34,12 +35,21 @@ def run_core_inference(
 
     cls = predict_single(cls_model, img, class_names=class_names, top_k=top_k)
 
-    needs_pose_first = seg_backend == "sam2" and sam2_mode == "pose_prompted"
+    needs_pose_first = (
+        (seg_backend == "sam2" and sam2_mode == "pose_prompted")
+        or (
+            seg_backend == "sam3"
+            and sam3_mode in {"pose_prompted", "pose_concept_prompted"}
+        )
+    )
     pose = predict_pose(pose_model, img, conf_threshold=conf_threshold) if needs_pose_first else None
 
     seg = predict_segmentation_with(
         seg_backend, seg_handle, img,
-        sam2_mode=sam2_mode, pose_result=pose,
+        sam2_mode=sam2_mode,
+        sam3_mode=sam3_mode,
+        pose_result=pose,
+        classification_result=cls,
     )
 
     if pose is None:

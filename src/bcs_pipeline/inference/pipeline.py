@@ -45,6 +45,8 @@ def run_full_inference(
     segmentation_backend: str = "deeplab",
     sam2_mode: str = "prompted",
     sam2_config: Optional[str] = None,
+    sam3_mode: str = "pose_concept_prompted",
+    sam3_bpe_path: Optional[str] = None,
     data_dir: Optional[str] = None,
     top_k: int = 5,
     pose_conf_threshold: float = 0.25,
@@ -78,12 +80,14 @@ def run_full_inference(
             top_k=top_k,
         )
 
-    # When sam2 pose_prompted mode is requested, the pose result must be
-    # available *before* segmentation runs.
-    needs_pose_first = (
-        segmentation_backend == "sam2"
-        and sam2_mode == "pose_prompted"
-        and pose_ckpt is not None
+    # Pose detection must run *before* segmentation when the chosen backend
+    # consumes pose prompts (SAM 2 pose_prompted, or SAM 3 pose_/pose_concept_prompted).
+    needs_pose_first = pose_ckpt is not None and (
+        (segmentation_backend == "sam2" and sam2_mode == "pose_prompted")
+        or (
+            segmentation_backend == "sam3"
+            and sam3_mode in {"pose_prompted", "pose_concept_prompted"}
+        )
     )
 
     pose_result: Optional[Dict] = None
@@ -100,6 +104,7 @@ def run_full_inference(
             segmentation_ckpt,
             device=device,
             sam2_config=sam2_config,
+            sam3_bpe_path=sam3_bpe_path,
         )
         segmentation_result = predict_segmentation_with(
             segmentation_backend,
@@ -107,7 +112,9 @@ def run_full_inference(
             pil_image,
             image_size=segmentation_image_size,
             sam2_mode=sam2_mode,
+            sam3_mode=sam3_mode,
             pose_result=pose_result,
+            classification_result=classification_result,
             device=device,
         )
 

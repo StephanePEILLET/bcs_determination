@@ -33,11 +33,12 @@ Modèles entraînés :
 
 Isoler le contour du chien dans l'image permet d'analyser sa **silhouette** : un chien en surpoids présentera un contour plus large au niveau des côtes et de la taille, sans taille marquée vue de dessus.
 
-Deux backends interchangeables :
+Trois backends interchangeables :
 
 - **DeepLabV3-ResNet50** (COCO pretrained, fine-tuned) — val_IoU = 0.82, 3 classes trimap (*foreground*, *background*, *border*).
   Métriques : Pixel Accuracy = 93.7%, mIoU = 0.82, mDice = 0.89.
 - **SAM 2** (zero-shot, 3 modes : `prompted`, `automatic`, `pose_prompted`) — masque à **2 classes** (*foreground*, *background*) directement issu du masque binaire SAM, sans bordure dérivée (silhouette déjà nette).
+- **SAM 3** (zero-shot, race-aware, 4 modes : `prompted`, `pose_prompted`, `concept_prompted`, `pose_concept_prompted`) — masque 2 classes guidé par un *prompt textuel* (la race prédite par le classifier) combiné aux invites visuelles YOLO (bbox + keypoints). Voir [§ Setup SAM 3](#sam-3-setup-optionnel) pour l'installation (modèle gated HuggingFace).
 
 Le masque est **éditable côté navigateur** (pinceau pour ajouter au foreground, gomme pour repasser au background) et le résultat est persisté en base avec les autres annotations.
 
@@ -63,7 +64,7 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 | Framework DL | PyTorch + PyTorch Lightning |
 | Hyperparamètres | Hydra + Optuna |
 | Logging | TensorBoard (+ W&B optionnel) |
-| Modèles | torchvision (ResNet, DeepLabV3), HuggingFace Transformers (ViT), SAM 2, YOLOv8 |
+| Modèles | torchvision (ResNet, DeepLabV3), HuggingFace Transformers (ViT), SAM 2, SAM 3 (optionnel), YOLOv8 |
 | Serveur d'inférence | FastAPI + Uvicorn (UI interactive, édition d'annotations) |
 | Persistance | SQLite via SQLAlchemy (runs + annotations utilisateur) |
 | Container | Docker |
@@ -193,33 +194,105 @@ bcs_determination/
 
 ## Setup & Installation
 
-### Option A — Bootstrap automatique (recommandé)
+### Option A — `uv` direct (le plus simple)
 
-Le script `setup_and_run.sh` installe `uv` (gestionnaire d'environnement
-Python rapide), crée le venv `.venv/`, télécharge les datasets (Stanford
-Dogs, Oxford-IIIT Pet, images Reddit d'exemple) et le checkpoint SAM 2, puis
-lance l'application :
+Le projet est entièrement géré par [uv](https://docs.astral.sh/uv/) :
+[`.python-version`](.python-version) épingle Python 3.12 et
+[`pyproject.toml`](pyproject.toml) déclare toutes les dépendances + l'index
+PyTorch CUDA 12.4 (Linux) via `[tool.uv.sources]`. Une seule commande
+crée le venv `.venv/`, résout torch+CUDA, installe le projet et écrit
+`uv.lock` pour la reproductibilité :
 
 ```bash
-chmod +x setup_and_run.sh
-./setup_and_run.sh                  # tout faire
-./setup_and_run.sh --skip-data      # passer le téléchargement des données
-./setup_and_run.sh --skip-env       # réutiliser .venv/ existant
-./setup_and_run.sh --no-launch      # arrêter avant de lancer l'app
-./setup_and_run.sh --preload        # pré-charger la DB (inférences pré-calculées)
-./setup_and_run.sh --cpu            # forcer l'exécution sur CPU
+uv sync --extra dev --extra sam3      # full (DeepLab + SAM 2 + SAM 3)
+# ou bien :
+uv sync --extra dev                   # sans SAM 3
 ```
 
-### Option B — Conda manuel
+Lancement de l'app sans avoir à activer le venv :
+
+```bash
+uv run python app.py
+# ou :
+uv run python inference.py --mode full --image_path data/Reddit_example/dog.jpg
+```
+
+### Option B — Bootstrap automatique avec datasets
+
+Le script [`setup_and_run.sh`](scripts/setup_and_run.sh) reprend l'option A
+et ajoute : auto-installation d'`uv` si absent, détection GPU (CUDA / MPS /
+CPU), téléchargement des datasets (Stanford Dogs, Oxford-IIIT Pet, exemples
+Reddit) + des checkpoints SAM 2 / SAM 3, puis lancement de l'app.
+
+```bash
+./scripts/setup_and_run.sh                  # tout faire
+./scripts/setup_and_run.sh --skip-data      # passer le téléchargement des données
+./scripts/setup_and_run.sh --skip-env       # ne pas re-synchroniser le venv
+./scripts/setup_and_run.sh --no-launch      # arrêter avant de lancer l'app
+./scripts/setup_and_run.sh --preload        # pré-charger la DB (inférences pré-calculées)
+./scripts/setup_and_run.sh --cpu            # forcer BCS_DEVICE=cpu (pour les modèles)
+```
+
+### Option C — Conda manuel
 
 ```bash
 conda env create -f environment.yaml
 conda activate bcs_analysis
+pip install -e ".[dev]"          # base : DeepLab + SAM 2
+# ou bien :
+pip install -e ".[dev,sam3]"     # full : ajoute le backend SAM 3 (voir ci-dessous)
 ```
 
-> **Note:** L'`environment.yaml` inclut de lourdes dépendances `pip` que
-> Conda installe silencieusement — l'installation peut sembler figée
-> 5–10 min. Ne pas interrompre (`Ctrl+C`).
+> `environment.yaml` ne provisionne plus que Python 3.12 + PyTorch CUDA 12.4 ;
+> les dépendances projet sont résolues par `pyproject.toml` via le
+> `pip install -e`. À la différence d'`uv sync`, `pip` n'utilise pas les
+> directives `[tool.uv.sources]` — le PyTorch CUDA arrive ici via la
+> directive `pytorch-cuda` dans `environment.yaml`.
+
+### SAM 3 — setup optionnel
+
+Le backend SAM 3 (Meta, zero-shot avec prompts textuels) est *gated* sur
+HuggingFace et requiert un environnement plus récent que les autres
+backends.
+
+**Prérequis :**
+
+- Python ≥ 3.12, PyTorch ≥ 2.7, CUDA ≥ 12.4 (12.6 recommandé pour
+  flash-attn-3)
+- Compte HuggingFace avec **accès accordé** au dépôt
+  [`facebook/sam3`](https://huggingface.co/facebook/sam3) (formulaire
+  Meta à valider, comptez ~1h pour l'approbation)
+- ~3,4 Go libres pour le checkpoint
+
+**Installation :**
+
+```bash
+# 1. Installer l'extra
+pip install -e ".[dev,sam3]"          # via pip
+# ou : ./scripts/setup_and_run.sh     # le script automatise tout
+
+# 2. S'authentifier auprès de HuggingFace (token avec read access)
+hf auth login
+
+# 3. Télécharger le checkpoint dans checkpoints/segmentation/sam3/
+hf download facebook/sam3 --local-dir checkpoints/segmentation/sam3
+
+# 4. Créer le symlink attendu par l'app
+ln -sf sam3/sam3.pt checkpoints/segmentation/sam3_image_model.pt
+```
+
+**Modes disponibles** (sélecteur `sam3_mode` dans l'UI ou
+`--sam3_mode` en CLI) :
+
+| Mode | Description |
+| --- | --- |
+| `prompted` | Point positif au centre de l'image (fallback minimal). |
+| `pose_prompted` | bbox YOLO + tous les keypoints visibles → invites visuelles SAM 3. |
+| `concept_prompted` | Race prédite par le classifier injectée comme *text prompt* (`"golden retriever"`). |
+| `pose_concept_prompted` *(défaut)* | Lance les deux branches et garde le masque le mieux scoré ; fallback gracieux quand un signal est absent. |
+
+> Le BPE vocab (`bpe_simple_vocab_16e6.txt.gz`) est bundlé dans le package
+> `sam3` — pas de download supplémentaire nécessaire.
 
 ### Vérification
 

@@ -119,11 +119,13 @@ def load_segmentation_backend(
     checkpoint_path: str,
     device: torch.device | None = None,
     sam2_config: str | None = None,
+    sam3_bpe_path: str | None = None,
 ):
     """Load a segmentation model for the requested backend.
 
-    Returns an opaque handle: a ``LitSegmentationModule`` for ``"deeplab"`` or a
-    dict ``{"predictor", "auto_gen", ...}`` for ``"sam2"``. Use
+    Returns an opaque handle: a ``LitSegmentationModule`` for ``"deeplab"``, a
+    dict ``{"predictor", "auto_gen", ...}`` for ``"sam2"``, or a dict
+    ``{"model", "processor", ...}`` for ``"sam3"``. Use
     :func:`predict_segmentation_with` to dispatch inference uniformly.
     """
     if backend == "deeplab":
@@ -138,7 +140,12 @@ def load_segmentation_backend(
             config_path=sam2_config or DEFAULT_SAM2_CONFIG,
             device=device,
         )
-    raise ValueError(f"Unknown segmentation backend: {backend!r}. Use 'deeplab' or 'sam2'.")
+    if backend == "sam3":
+        from bcs_pipeline.inference.segmentation_sam3 import load_sam3_model
+        return load_sam3_model(checkpoint_path, bpe_path=sam3_bpe_path, device=device)
+    raise ValueError(
+        f"Unknown segmentation backend: {backend!r}. Use 'deeplab', 'sam2' or 'sam3'."
+    )
 
 
 def predict_segmentation_with(
@@ -148,15 +155,20 @@ def predict_segmentation_with(
     *,
     image_size: int = SEG_IMAGE_SIZE,
     sam2_mode: str = "prompted",
+    sam3_mode: str = "pose_concept_prompted",
     pose_result: dict | None = None,
+    classification_result: dict | None = None,
     kpt_threshold: float = 0.3,
     device: torch.device | None = None,
 ) -> Dict:
     """Dispatch ``predict_segmentation`` to the chosen backend.
 
-    Output shape is identical for both backends so the downstream visualization
-    code is unaware of the backend choice. ``pose_result`` is only consumed
-    when ``backend == "sam2"`` and ``sam2_mode == "pose_prompted"``.
+    Output shape is identical across backends so the downstream visualization
+    code is unaware of the backend choice. ``pose_result`` is consumed by
+    ``sam2`` (when ``sam2_mode == "pose_prompted"``) and by ``sam3``
+    (``pose_prompted`` / ``pose_concept_prompted`` modes).
+    ``classification_result`` is consumed by ``sam3`` for the concept-grounded
+    text prompt.
     """
     if backend == "deeplab":
         result = predict_segmentation(handle, image, image_size=image_size, device=device)
@@ -170,4 +182,17 @@ def predict_segmentation_with(
             pose_result=pose_result,
             kpt_threshold=kpt_threshold,
         )
-    raise ValueError(f"Unknown segmentation backend: {backend!r}. Use 'deeplab' or 'sam2'.")
+    if backend == "sam3":
+        from bcs_pipeline.inference.segmentation_sam3 import predict_segmentation_sam3
+        # SAM3 defaults to a permissive keypoint threshold (all visible kpts).
+        sam3_kpt_threshold = 0.0 if kpt_threshold == 0.3 else kpt_threshold
+        return predict_segmentation_sam3(
+            handle, image,
+            mode=sam3_mode,
+            pose_result=pose_result,
+            classification_result=classification_result,
+            kpt_threshold=sam3_kpt_threshold,
+        )
+    raise ValueError(
+        f"Unknown segmentation backend: {backend!r}. Use 'deeplab', 'sam2' or 'sam3'."
+    )

@@ -38,6 +38,11 @@ from bcs_pipeline.inference.segmentation_sam2 import (
     predict_segmentation_sam2,
     sam2_mask_to_trimap,
 )
+from bcs_pipeline.inference.segmentation_sam3 import (
+    load_sam3_model,
+    predict_segmentation_sam3,
+    sam3_mask_to_trimap,
+)
 from bcs_pipeline.inference.pose import (
     load_pose_model,
     predict_pose,
@@ -86,6 +91,10 @@ __all__ = [
     "predict_segmentation_sam2",
     "sam2_mask_to_trimap",
     "DEFAULT_SAM2_CONFIG",
+    # segmentation (SAM3)
+    "load_sam3_model",
+    "predict_segmentation_sam3",
+    "sam3_mask_to_trimap",
     # pose
     "load_pose_model",
     "predict_pose",

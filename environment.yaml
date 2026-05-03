@@ -1,3 +1,19 @@
+# Conda environment for the BCS Determination pipeline.
+#
+# This file provisions the Python interpreter and PyTorch with CUDA 12.4
+# support. All other project dependencies live in `pyproject.toml`. After
+# `conda env create -f environment.yaml`, run:
+#
+#     conda activate bcs_analysis
+#     pip install -e ".[dev]"          # base install (DeepLab + SAM 2 backends)
+#     pip install -e ".[dev,sam3]"     # full install (adds Meta SAM 3, gated)
+#
+# SAM 3 also requires `hf auth login` (HuggingFace token with access granted to
+# `facebook/sam3`).
+#
+# CUDA mismatch note: pin `pytorch-cuda` to match the host driver. SAM 3's
+# upstream README requires CUDA ≥ 12.6 for flash-attn-3 acceleration, but
+# 12.4 is the latest stable conda channel and is sufficient for inference.
 name: bcs_analysis
 channels:
   - pytorch
@@ -5,32 +21,9 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10
-  - mkl<2024.1.0  # Prevents the PyTorch undefined symbol: iJIT_NotifyEvent bug
+  - python=3.12
   - pip
-  - pytorch>=2.0.0
-  - torchvision>=0.15.0
+  - pytorch>=2.7
+  - torchvision
   - torchaudio
-  - pytorch-cuda=11.8 # Or 12.1 depending on the GPU
-  - mkl<2025  # MKL 2025+ requires libittnotify.so (ITT API) which conflicts with PyTorch
-  - ittapi  # Required by MKL for Intel ITT profiling symbols
-  - pip:
-    - pytorch-lightning>=2.0.0
-    - torchmetrics>=0.11.0
-    - hydra-core>=1.3.0
-    - omegaconf>=2.3.0
-    - pydantic>=2.0.0
-    - wandb>=0.15.0
-    - tensorboard>=2.10.0
-    - rich>=13.0.0
-    - matplotlib>=3.5.0
-    - seaborn>=0.11.0
-    - pandas
-    - scikit-learn>=1.1.0
-    - transformers>=4.30.0
-    - hydra-optuna-sweeper>=1.2.0
-    - fastapi>=0.100.0
-    - uvicorn>=0.22.0
-    - flask>=3.0.0
-    - prodict>=0.8.0
-    - python-multipart>=0.0.6
+  - pytorch-cuda=12.4

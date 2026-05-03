@@ -110,8 +110,9 @@ def parse_args() -> argparse.Namespace:
         help="Segmentation input resolution (default: 256, DeepLabV3 only).",
     )
     parser.add_argument(
-        "--seg_backend", choices=["deeplab", "sam2"], default="deeplab",
-        help="Segmentation backend: 'deeplab' (fine-tuned trimap) or 'sam2' (zero-shot foundation).",
+        "--seg_backend", choices=["deeplab", "sam2", "sam3"], default="deeplab",
+        help="Segmentation backend: 'deeplab' (fine-tuned trimap), 'sam2' (zero-shot foundation) "
+             "or 'sam3' (zero-shot, race-aware via concept prompt).",
     )
     parser.add_argument(
         "--sam2_mode", choices=["prompted", "automatic", "pose_prompted"], default="prompted",
@@ -121,6 +122,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sam2_config", type=str, default=None,
         help="SAM2 model config YAML (default: configs/sam2.1/sam2.1_hiera_l.yaml).",
+    )
+    parser.add_argument(
+        "--sam3_mode",
+        choices=["prompted", "pose_prompted", "concept_prompted", "pose_concept_prompted"],
+        default="pose_concept_prompted",
+        help="SAM3 prompting mode (only used when --seg_backend=sam3). "
+             "'pose_*' requires --pose_checkpoint, 'concept_*' requires --checkpoint_path.",
+    )
+    parser.add_argument(
+        "--sam3_bpe_path", type=str, default=None,
+        help="SAM3 BPE vocabulary file (default: bundled with sam3 package).",
     )
     parser.add_argument(
         "--conf_threshold", type=float, default=0.25,
@@ -207,6 +219,8 @@ def main() -> None:
             segmentation_backend=args.seg_backend,
             sam2_mode=args.sam2_mode,
             sam2_config=args.sam2_config,
+            sam3_mode=args.sam3_mode,
+            sam3_bpe_path=args.sam3_bpe_path,
             data_dir=args.data_dir or None,
             top_k=args.top_k,
             pose_conf_threshold=args.conf_threshold,
