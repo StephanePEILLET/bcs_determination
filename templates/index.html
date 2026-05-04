@@ -38,13 +38,9 @@
           <label>Segmentation</label>
           <select id="sel-backend"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option><option value="sam3">SAM 3 (zero-shot, race-aware)</option></select>
         </div>
-        <div class="field">
-          <label>SAM 2 mode</label>
-          <select id="sel-sam2-mode"><option value="prompted">prompted (centre)</option><option value="automatic">automatic (grille)</option><option value="pose_prompted" selected>pose_prompted</option></select>
-        </div>
-        <div class="field">
-          <label>SAM 3 mode</label>
-          <select id="sel-sam3-mode"><option value="prompted">prompted (centre)</option><option value="pose_prompted">pose_prompted</option><option value="concept_prompted">concept_prompted (race)</option><option value="pose_concept_prompted" selected>pose_concept_prompted</option></select>
+        <div class="field" id="field-sam-mode">
+          <label>SAM prompt input</label>
+          <select id="sel-sam-mode"></select>
         </div>
       </div>
     </div>
@@ -60,13 +56,9 @@
           <label>Segmentation</label>
           <select id="sel-backend-up"><option value="deeplab">DeepLabV3 (fine-tuned)</option><option value="sam2" selected>SAM 2 (zero-shot)</option><option value="sam3">SAM 3 (zero-shot, race-aware)</option></select>
         </div>
-        <div class="field">
-          <label>SAM 2 mode</label>
-          <select id="sel-sam2-up"><option value="prompted">prompted (centre)</option><option value="automatic">automatic (grille)</option><option value="pose_prompted" selected>pose_prompted</option></select>
-        </div>
-        <div class="field">
-          <label>SAM 3 mode</label>
-          <select id="sel-sam3-up"><option value="prompted">prompted (centre)</option><option value="pose_prompted">pose_prompted</option><option value="concept_prompted">concept_prompted (race)</option><option value="pose_concept_prompted" selected>pose_concept_prompted</option></select>
+        <div class="field" id="field-sam-mode-up">
+          <label>SAM prompt input</label>
+          <select id="sel-sam-up"></select>
         </div>
       </div>
     </div>

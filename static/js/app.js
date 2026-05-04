@@ -1,8 +1,8 @@
 const $ = id => document.getElementById(id);
 
 const $dataset=$("sel-dataset"), $group=$("sel-group"), $image=$("sel-image");
-const $backend=$("sel-backend"), $sam2=$("sel-sam2-mode"), $sam3=$("sel-sam3-mode");
-const $backendUp=$("sel-backend-up"), $sam2Up=$("sel-sam2-up"), $sam3Up=$("sel-sam3-up");
+const $backend=$("sel-backend"), $samMode=$("sel-sam-mode"), $samField=$("field-sam-mode");
+const $backendUp=$("sel-backend-up"), $samModeUp=$("sel-sam-up"), $samFieldUp=$("field-sam-mode-up");
 const $chkSeg=$("chk-seg"), $chkBox=$("chk-boxes"), $chkKpt=$("chk-keypoints");
 const $btnRun=$("btn-run"), $btnPng=$("btn-export-png"), $btnJson=$("btn-export-json"), $btnSave=$("btn-save");
 const $btnImport=$("btn-import-json"), $importFile=$("import-json-file");
@@ -107,14 +107,68 @@ function showResults(v) {
   $hintBar.classList.toggle("active", v);
 }
 function getBackend() { return activeTab === "tab-upload" ? $backendUp.value : $backend.value; }
-function getSam2() { return activeTab === "tab-upload" ? $sam2Up.value : $sam2.value; }
-function getSam3() { return activeTab === "tab-upload" ? $sam3Up.value : $sam3.value; }
-function updateSam2State() {
-  $sam2.disabled = $backend.value !== "sam2";
-  $sam2Up.disabled = $backendUp.value !== "sam2";
-  $sam3.disabled = $backend.value !== "sam3";
-  $sam3Up.disabled = $backendUp.value !== "sam3";
+
+// Unified SAM prompt-input selector. Each backend has its own option list and
+// its own remembered last-pick, so toggling sam2 ↔ sam3 doesn't lose state.
+const SAM_MODES = {
+  sam2: [
+    { value: "prompted", label: "prompted (centre)" },
+    { value: "automatic", label: "automatic (grille)" },
+    { value: "pose_prompted", label: "pose_prompted" },
+  ],
+  sam3: [
+    { value: "prompted", label: "prompted (centre)" },
+    { value: "pose_prompted", label: "pose_prompted" },
+    { value: "concept_prompted", label: "concept_prompted (race)" },
+    { value: "pose_concept_prompted", label: "pose_concept_prompted" },
+  ],
+};
+const SAM_MODE_DEFAULTS = { sam2: "pose_prompted", sam3: "pose_concept_prompted" };
+const _samModeMemory = { sam2: SAM_MODE_DEFAULTS.sam2, sam3: SAM_MODE_DEFAULTS.sam3 };
+
+function _activeSamSelect() { return activeTab === "tab-upload" ? $samModeUp : $samMode; }
+
+function _populateSamSelect($select, backend) {
+  $select.innerHTML = "";
+  const opts = SAM_MODES[backend] || [];
+  const target = _samModeMemory[backend] || SAM_MODE_DEFAULTS[backend];
+  for (const o of opts) {
+    const node = document.createElement("option");
+    node.value = o.value;
+    node.textContent = o.label;
+    if (o.value === target) node.selected = true;
+    $select.appendChild(node);
+  }
 }
+
+function updateSamModeField() {
+  // For each tab, hide the field on deeplab, repopulate on sam2/sam3.
+  const pairs = [
+    [$backend.value,   $samMode,   $samField],
+    [$backendUp.value, $samModeUp, $samFieldUp],
+  ];
+  for (const [backend, $select, $field] of pairs) {
+    if (backend === "sam2" || backend === "sam3") {
+      _populateSamSelect($select, backend);
+      $field.style.display = "";
+    } else {
+      $select.innerHTML = "";
+      $field.style.display = "none";
+    }
+  }
+}
+
+function getSamMode() {
+  const backend = getBackend();
+  if (backend !== "sam2" && backend !== "sam3") return SAM_MODE_DEFAULTS.sam3;
+  return _activeSamSelect().value || SAM_MODE_DEFAULTS[backend];
+}
+
+// The server still reads sam2_mode / sam3_mode separately. Route the unified
+// selector's value to the correct field for the active backend; for the
+// inactive one, send its remembered default so the payload is well-formed.
+function getSam2() { return getBackend() === "sam2" ? getSamMode() : _samModeMemory.sam2; }
+function getSam3() { return getBackend() === "sam3" ? getSamMode() : _samModeMemory.sam3; }
 
 /* ── Tool mode ───────────────────────────────────────── */
 function setCursorForTool() {
@@ -794,8 +848,11 @@ function exportJson() {
 /* ── Events ──────────────────────────────────────────── */
 $dataset.addEventListener("change", onDatasetChange);
 $group.addEventListener("change", onGroupChange);
-$backend.addEventListener("change", updateSam2State);
-$backendUp.addEventListener("change", updateSam2State);
+$backend.addEventListener("change", updateSamModeField);
+$backendUp.addEventListener("change", updateSamModeField);
+// Remember each backend's last-picked mode so it survives a backend toggle.
+$samMode.addEventListener("change", () => { _samModeMemory[$backend.value] = $samMode.value; });
+$samModeUp.addEventListener("change", () => { _samModeMemory[$backendUp.value] = $samModeUp.value; });
 $btnRun.addEventListener("click", runInference);
 $btnPng.addEventListener("click", exportPng);
 $btnJson.addEventListener("click", exportJson);
@@ -1166,7 +1223,7 @@ async function stopPreload() {
 $btnPreloadStop.addEventListener("click", stopPreload);
 
 document.addEventListener("DOMContentLoaded", () => {
-  updateSam2State();
+  updateSamModeField();
   loadDatasets();
   loadHistory();
   checkPreloadStatus();
