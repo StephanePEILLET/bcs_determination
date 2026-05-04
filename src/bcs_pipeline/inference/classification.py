@@ -7,6 +7,7 @@ import os
 from typing import Dict, List, Optional
 
 from bcs_pipeline.utils.device import get_best_device
+from bcs_pipeline.datasets import normalize_breed_name
 
 import torch
 import torch.nn.functional as F
@@ -96,6 +97,7 @@ def load_class_names(data_dir: str) -> Optional[List[str]]:
 
     classes = sorted(d.name for d in os.scandir(images_dir) if d.is_dir())
     clean = ["-".join(c.split("-")[1:]) for c in classes]
+    clean = [normalize_breed_name(c) for c in clean]
     logger.debug("Loaded %d class names from %s", len(clean), images_dir)
     return clean
 
@@ -122,7 +124,7 @@ def load_oxford_cat_class_names(oxford_dir: str) -> Optional[List[str]]:
             if len(parts) < 3 or parts[2] != "1":
                 continue
             breeds.add(parts[0].rsplit("_", 1)[0])
-    return sorted(breeds)
+    return sorted(normalize_breed_name(b) for b in breeds)
 
 
 def load_combined_class_names(

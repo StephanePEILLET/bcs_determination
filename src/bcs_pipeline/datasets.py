@@ -7,6 +7,7 @@ command-line preloader (``scripts/preload_db.py``).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -21,12 +22,21 @@ REDDIT_DIR = REPO_ROOT / "data/Reddit_example"
 IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 
 
+def normalize_breed_name(name: str) -> str:
+    return name.replace("_", " ").replace("-", " ").title()
+
+
+def _natural_sort_key(s: str):
+    return [int(m) if m.isdigit() else m.lower() for m in re.split(r"(\d+)", s)]
+
+
 def list_image_files(folder: Path) -> List[Path]:
     if not folder.is_dir():
         return []
     return sorted(
-        p for p in folder.iterdir()
-        if p.suffix.lower() in IMAGE_EXTS and p.is_file()
+        (p for p in folder.iterdir()
+         if p.suffix.lower() in IMAGE_EXTS and p.is_file()),
+        key=lambda p: _natural_sort_key(p.name),
     )
 
 
@@ -35,19 +45,20 @@ def collect_all_images() -> List[Tuple[Path, str, str, Optional[str]]]:
 
     if STANFORD_IMAGES.is_dir():
         for breed_dir in sorted(p for p in STANFORD_IMAGES.iterdir() if p.is_dir()):
-            breed_name = (
+            raw = (
                 breed_dir.name.split("-", 1)[1]
                 if "-" in breed_dir.name
                 else breed_dir.name
             )
+            breed_name = normalize_breed_name(raw)
             for img_path in list_image_files(breed_dir):
                 entries.append((img_path, "Stanford Dogs", breed_name, breed_name))
 
     if OXFORD_IMAGES.is_dir():
         for img_path in list_image_files(OXFORD_IMAGES):
-            prefix = "_".join(img_path.stem.split("_")[:-1])
-            ground_truth = prefix.replace("_", " ")
-            entries.append((img_path, "Oxford-IIIT Pet", prefix, ground_truth))
+            raw = "_".join(img_path.stem.split("_")[:-1])
+            breed_name = normalize_breed_name(raw)
+            entries.append((img_path, "Oxford-IIIT Pet", breed_name, breed_name))
 
     if REDDIT_DIR.is_dir():
         for img_path in list_image_files(REDDIT_DIR):
@@ -61,11 +72,12 @@ def _stanford_groups() -> Dict[str, List[str]]:
     if not STANFORD_IMAGES.is_dir():
         return groups
     for breed_dir in sorted(p for p in STANFORD_IMAGES.iterdir() if p.is_dir()):
-        breed_name = (
+        raw = (
             breed_dir.name.split("-", 1)[1]
             if "-" in breed_dir.name
             else breed_dir.name
         )
+        breed_name = normalize_breed_name(raw)
         groups[breed_name] = [p.name for p in list_image_files(breed_dir)]
     return groups
 
@@ -73,9 +85,10 @@ def _stanford_groups() -> Dict[str, List[str]]:
 def _oxford_groups() -> Dict[str, List[str]]:
     groups: Dict[str, List[str]] = {}
     for img_path in list_image_files(OXFORD_IMAGES):
-        prefix = "_".join(img_path.stem.split("_")[:-1])
-        groups.setdefault(prefix, []).append(img_path.name)
-    return {k: sorted(v) for k, v in sorted(groups.items())}
+        raw = "_".join(img_path.stem.split("_")[:-1])
+        breed_name = normalize_breed_name(raw)
+        groups.setdefault(breed_name, []).append(img_path.name)
+    return {k: sorted(v, key=_natural_sort_key) for k, v in sorted(groups.items())}
 
 
 def _reddit_groups() -> Dict[str, List[str]]:
@@ -98,12 +111,12 @@ def resolve_image_path(dataset: str, group: str, filename: str) -> Optional[Path
         for breed_dir in STANFORD_IMAGES.iterdir():
             if not breed_dir.is_dir():
                 continue
-            breed_name = (
+            raw = (
                 breed_dir.name.split("-", 1)[1]
                 if "-" in breed_dir.name
                 else breed_dir.name
             )
-            if breed_name == group:
+            if normalize_breed_name(raw) == group:
                 return breed_dir / filename
         return None
     if dataset == "Oxford-IIIT Pet":
@@ -117,5 +130,5 @@ def ground_truth(dataset: str, group: str) -> Optional[str]:
     if dataset == "Stanford Dogs":
         return group if group else None
     if dataset == "Oxford-IIIT Pet":
-        return group.replace("_", " ") if group else None
+        return group if group else None
     return None
