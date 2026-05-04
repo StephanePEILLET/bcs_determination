@@ -14,6 +14,10 @@ Layout under ``checkpoints/`` (relative to the repo root):
     segmentation/
         deeplabv3_resnet50_last-v1.ckpt   ← active DeepLabV3 trimap segmenter
         sam2.1_hiera_large.pt             ← Meta SAM 2.1 (Hiera-Large), zero-shot
+        sam3/                             ← Meta SAM 3 (HuggingFace gated)
+            sam3.pt                       ← SAM 3 image model weights
+            bpe_simple_vocab_16e6.txt.gz  ← BPE vocabulary (bundled in HF repo)
+            ...
     pose/
         yolo_best.pt                      ← active Ultralytics YOLO pose model
         train/                            ← raw Ultralytics training output
@@ -71,8 +75,8 @@ SAM2_CKPT = _resolve_file(CHECKPOINTS_ROOT, "sam2.1_hiera_large.pt")
 # (``facebook/sam3``); the checkpoint and BPE vocabulary are fetched by
 # ``scripts/setup_and_run.sh`` after ``hf auth login``. The exact filename
 # is gated behind HF auth — adjust if HuggingFace renames the artifact.
-SAM3_CKPT = _resolve_file(CHECKPOINTS_ROOT, "sam3_image_model.pt")
-SAM3_BPE = _resolve_file(CHECKPOINTS_ROOT, "bpe_simple_vocab_16e6.txt.gz")
+SAM3_CKPT = CHECKPOINTS_ROOT / "segmentation" / "sam3" / "sam3.pt"
+SAM3_BPE = CHECKPOINTS_ROOT / "segmentation" / "sam3" / "bpe_simple_vocab_16e6.txt.gz"
 
 
 # ─── Pose ───────────────────────────────────────────────────────────────────

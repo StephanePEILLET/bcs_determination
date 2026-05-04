@@ -66,11 +66,29 @@ def load_sam3_model(
         from sam3 import build_sam3_image_model
         from sam3.model.sam3_image_processor import Sam3Processor
     except ImportError as exc:
-        raise ImportError(
-            "The `sam3` package is not installed. Install it with "
-            "`pip install -e \".[sam3]\"` (requires Python ≥ 3.12, "
-            "PyTorch ≥ 2.7, CUDA ≥ 12.6)."
-        ) from exc
+        # Distinguish "package missing" from "package present but a transitive
+        # import failed" — the latter happens e.g. with setuptools ≥ 81 where
+        # `pkg_resources` is no longer in the default install (sam3 imports it
+        # unconditionally at module load).
+        missing = exc.name or ""
+        if missing == "sam3":
+            hint = (
+                "Install it with `pip install -e \".[sam3]\"` "
+                "(requires Python ≥ 3.12, PyTorch ≥ 2.7, CUDA ≥ 12.6)."
+            )
+        elif missing == "pkg_resources":
+            hint = (
+                "The upstream `sam3` package imports `pkg_resources`, which "
+                "setuptools ≥ 81 no longer ships. Run `uv pip install "
+                "'setuptools<81'` (this is now pinned in the [sam3] extra)."
+            )
+        else:
+            hint = (
+                f"`sam3` is installed but a transitive import failed "
+                f"({missing or 'unknown'}). The original error is chained "
+                f"below — install the missing dependency and retry."
+            )
+        raise ImportError(f"SAM 3 backend unavailable: {exc}. {hint}") from exc
 
     if device is None:
         device = get_best_device()

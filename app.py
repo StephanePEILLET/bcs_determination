@@ -473,11 +473,26 @@ async def api_inference_upload(
 
 
 @app.get("/api/history")
-def api_history(limit: int = Query(50), offset: int = Query(0)):
+def api_history(
+    limit: int = Query(50),
+    offset: int = Query(0),
+    sort: str = Query("last_inferred_at"),
+    order: str = Query("desc"),
+):
     with session_scope(_DB_SESSION) as session:
         total = session.query(InferenceRun).count()
-        runs = db_list_runs(session, limit=limit, offset=offset)
-        return {"total": total, "runs": runs, "page": offset // limit + 1, "page_size": limit}
+        runs = db_list_runs(
+            session, limit=limit, offset=offset,
+            sort_by=sort, sort_order=order,
+        )
+        return {
+            "total": total,
+            "runs": runs,
+            "page": offset // limit + 1,
+            "page_size": limit,
+            "sort": sort,
+            "order": order,
+        }
 
 
 @app.get("/api/history/{run_id}")
@@ -535,18 +550,20 @@ def api_delete_history(run_id: int):
 
 
 @app.get("/api/preload/status")
-def api_preload_status():
+def api_preload_status(seg_backend: str = Query("")):
     total_images = len(collect_all_images())
     with session_scope(_DB_SESSION) as session:
-        db_count = session.query(InferenceRun).filter(
-            InferenceRun.source_type == "dataset"
-        ).count()
+        q = session.query(InferenceRun).filter(InferenceRun.source_type == "dataset")
+        if seg_backend:
+            q = q.filter(InferenceRun.seg_backend == seg_backend)
+        db_count = q.count()
     remaining = max(0, total_images - db_count)
     return {
         "total_images": total_images,
         "db_count": db_count,
         "remaining": remaining,
         "complete": remaining == 0,
+        "seg_backend": seg_backend or None,
         "running": _preload_state["running"],
         "progress": _preload_state.copy(),
     }

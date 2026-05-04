@@ -50,6 +50,11 @@ class InferenceRun(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_inferred_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
     image_name = Column(String, nullable=False)
     source_type = Column(String, default="dataset")
     dataset = Column(String, nullable=True)
@@ -80,6 +85,7 @@ class InferenceRun(Base):
         return {
             "id": self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_inferred_at": self.last_inferred_at.isoformat() if self.last_inferred_at else None,
             "image_name": self.image_name,
             "source_type": self.source_type,
             "dataset": self.dataset,
@@ -155,6 +161,25 @@ def _migrate_schema(engine) -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE user_annotations ADD COLUMN mask_path VARCHAR"))
             logger.info("Migrated user_annotations: added mask_path column")
+
+    # ── inference_runs.last_inferred_at (added later) ───────────────────────
+    if "inference_runs" in table_names:
+        run_cols = {c["name"] for c in inspector.get_columns("inference_runs")}
+        if "last_inferred_at" not in run_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE inference_runs ADD COLUMN last_inferred_at DATETIME"
+                ))
+                # Backfill existing rows: treat first creation as last activity.
+                conn.execute(text(
+                    "UPDATE inference_runs SET last_inferred_at = created_at "
+                    "WHERE last_inferred_at IS NULL"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_inference_runs_last_inferred_at "
+                    "ON inference_runs (last_inferred_at)"
+                ))
+            logger.info("Migrated inference_runs: added last_inferred_at column (backfilled from created_at)")
 
     # ── inference_runs UNIQUE(image_name, dataset, group_name, seg_backend) ──
     # On a pre-existing DB, the constraint declared in __table_args__ is not
@@ -254,6 +279,9 @@ def save_run(
             "save_run: run already exists for %s/%s/%s/%s → returning #%d",
             image_name, dataset, group_name, seg_backend, existing.id,
         )
+        # Bump last_inferred_at so the row floats to the top of history.
+        existing.last_inferred_at = datetime.now(timezone.utc)
+        session.commit()
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"run_{existing.id}.json"
         with open(output_file, "w", encoding="utf-8") as f:
@@ -361,14 +389,49 @@ def load_run(session: SaSession, run_id: int) -> Optional[Dict[str, Any]]:
     return data
 
 
-def list_runs(session: SaSession, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-    runs = (
-        session.query(InferenceRun)
-        .order_by(InferenceRun.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+_SORTABLE_COLUMNS = {
+    "id": InferenceRun.id,
+    "created_at": InferenceRun.created_at,
+    "last_inferred_at": InferenceRun.last_inferred_at,
+    "image_name": InferenceRun.image_name,
+    "predicted_class": InferenceRun.predicted_class,
+    "predicted_confidence": InferenceRun.predicted_confidence,
+    "seg_backend": InferenceRun.seg_backend,
+}
+
+
+def list_runs(
+    session: SaSession,
+    limit: int = 50,
+    offset: int = 0,
+    sort_by: str = "last_inferred_at",
+    sort_order: str = "desc",
+) -> List[Dict[str, Any]]:
+    """Return a page of run summaries.
+
+    ``sort_by`` is matched against an allowlist (see ``_SORTABLE_COLUMNS``)
+    plus the synthetic ``has_annotations`` column. Anything else falls back
+    to ``last_inferred_at``. ``sort_order`` is ``"asc"`` or ``"desc"``
+    (default).
+    """
+    descending = sort_order.lower() != "asc"
+    query = session.query(InferenceRun)
+
+    if sort_by == "has_annotations":
+        # LEFT JOIN so rows without annotations are still returned. Sort by
+        # whether an annotation exists, then by recency as a stable tiebreak.
+        query = query.outerjoin(UserAnnotation, InferenceRun.annotation)
+        primary = UserAnnotation.id.isnot(None)
+        primary = primary.desc() if descending else primary.asc()
+        tiebreak = InferenceRun.last_inferred_at.desc()
+        query = query.order_by(primary, tiebreak)
+    else:
+        column = _SORTABLE_COLUMNS.get(sort_by, InferenceRun.last_inferred_at)
+        primary = column.desc() if descending else column.asc()
+        # Always tiebreak by id desc for deterministic pagination.
+        query = query.order_by(primary, InferenceRun.id.desc())
+
+    runs = query.offset(offset).limit(limit).all()
     return [r.to_summary() for r in runs]
 
 

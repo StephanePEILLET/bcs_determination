@@ -36,9 +36,13 @@ def load_segmentation_model(
 ) -> LitSegmentationModule:
     """Load a trained DeepLabV3 checkpoint in eval mode.
 
-    Uses ``strict=False`` because checkpoints saved with ``pretrained=True``
-    include ``aux_classifier`` weights that may not be present when the model
-    is re-created without pretrained weights.
+    Bypasses ``LightningModule.load_from_checkpoint`` because the checkpoint's
+    hyperparameters embed an ``omegaconf.DictConfig`` from the Hydra training
+    config, which trips PyTorch ≥ 2.6's default ``weights_only=True``. Loads
+    the state dict manually with ``weights_only=False`` and ``strict=False``
+    so the saved ``aux_classifier`` weights (only present when the network
+    was built with COCO pretrained weights) are silently dropped — they are
+    not used at inference time.
     """
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -47,11 +51,18 @@ def load_segmentation_model(
         device = get_best_device()
 
     logger.info("Loading segmentation model from %s (device=%s)…", checkpoint_path, device)
-    model = LitSegmentationModule.load_from_checkpoint(
-        checkpoint_path=checkpoint_path,
-        num_classes=num_classes,
-        map_location=device,
-    )
+
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    state_dict = ckpt["state_dict"]
+
+    model = LitSegmentationModule(num_classes=num_classes, pretrained=False)
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    unexpected_non_aux = [k for k in unexpected if "aux_classifier" not in k]
+    if missing:
+        logger.warning("Missing keys when loading segmentation checkpoint: %s", missing)
+    if unexpected_non_aux:
+        logger.warning("Unexpected keys when loading segmentation checkpoint: %s", unexpected_non_aux)
+
     model.to(device)
     model.eval()
     return model

@@ -6,6 +6,56 @@
 
 Le **Body Condition Score** est un indicateur clinique (échelle 1–9) utilisé par les vétérinaires pour évaluer l'état corporel d'un animal (embonpoint, idéal, maigreur). Cette estimation repose today'hui sur une palpation manuelle et une évaluation visuelle subjective. Ce projet explore une approche **entièrement visuelle et automatisée** basée sur le deep learning.
 
+## Démarrage rapide
+
+```bash
+# 1. Installer les dépendances
+uv sync --extra dev                   # sans SAM 3
+# ou : uv sync --extra dev --extra sam3  # avec SAM 3
+
+# 2. Lancer l'application web
+uv run python app.py                  # http://localhost:5000
+
+# 3. Ou lancer une inférence en CLI
+uv run python inference.py --mode full --image_path data/Reddit_example/dog.jpg
+```
+
+<details>
+<summary><strong>Bootstrap complet (données + checkpoints + app)</strong></summary>
+
+```bash
+chmod +x scripts/setup_and_run.sh
+./scripts/setup_and_run.sh            # setup complet + lancement
+./scripts/setup_and_run.sh --preload  # idem + pré-chargement DB
+./scripts/setup_and_run.sh --cpu      # forcer CPU (pas de GPU)
+```
+
+</details>
+
+<details>
+<summary><strong>Conda (alternative)</strong></summary>
+
+```bash
+conda env create -f environment.yaml
+conda activate bcs_analysis
+pip install -e ".[dev]"
+python app.py                         # http://localhost:5000
+```
+
+</details>
+
+<details>
+<summary><strong>Docker</strong></summary>
+
+```bash
+docker build -t bcs_determination .
+docker run -p 5000:5000 bcs_determination
+```
+
+</details>
+
+---
+
 ## Approche
 
 Le BCS d'un chien dépend fortement de sa **race** (un Greyhound et un Bulldog n'ont pas la même morphologie), de la **forme de son silhouette** (répartition graisse/muscle visible depuis le dessus et le côté), et de sa **posture**. Le pipeline combine trois piliers complémentaires :
@@ -162,12 +212,15 @@ bcs_determination/
 │   ├── Reddit_example/                    # Out-of-distribution images (téléchargées automatiquement)
 │   ├── outputs/                           # JSON + PNG de chaque run (run_<id>.json, run_<id>_mask.png)
 │   └── bcs_app.db                         # SQLite — historique des runs et annotations utilisateur
-├── checkpoints/                           # Modèles entraînés + SAM 2 weights
+├── checkpoints/                           # Modèles entraînés + SAM 2/3 weights
 │   ├── classification/
 │   │   └── vit_dogs_cats/last.ckpt        # Classifieur actif (ViT, 132 classes)
 │   ├── segmentation/
 │   │   ├── deeplabv3_resnet50_last-v1.ckpt
-│   │   └── sam2.1_hiera_large.pt
+│   │   ├── sam2.1_hiera_large.pt
+│   │   └── sam3/                          # SAM 3 (HuggingFace gated)
+│   │       ├── sam3.pt
+│   │       └── bpe_simple_vocab_16e6.txt.gz
 │   └── pose/
 │       └── yolo_best.pt
 ├── scripts/
@@ -276,9 +329,6 @@ hf auth login
 
 # 3. Télécharger le checkpoint dans checkpoints/segmentation/sam3/
 hf download facebook/sam3 --local-dir checkpoints/segmentation/sam3
-
-# 4. Créer le symlink attendu par l'app
-ln -sf sam3/sam3.pt checkpoints/segmentation/sam3_image_model.pt
 ```
 
 **Modes disponibles** (sélecteur `sam3_mode` dans l'UI ou
@@ -293,6 +343,13 @@ ln -sf sam3/sam3.pt checkpoints/segmentation/sam3_image_model.pt
 
 > Le BPE vocab (`bpe_simple_vocab_16e6.txt.gz`) est bundlé dans le package
 > `sam3` — pas de download supplémentaire nécessaire.
+>
+> **Pin `setuptools<81`.** Le code amont `sam3/model_builder.py` fait
+> `import pkg_resources` au chargement du module, et setuptools 81+ ne
+> livre plus `pkg_resources` par défaut. La contrainte est désormais
+> portée par l'extra `[sam3]` du `pyproject.toml`, mais si vous voyez
+> `ModuleNotFoundError: No module named 'pkg_resources'` au démarrage
+> de l'app, exécutez `uv pip install 'setuptools<81'`.
 
 ### Vérification
 
@@ -527,7 +584,7 @@ Modèles SQLAlchemy + helpers de persistance.
 | `save_run(session, ...)` | Persiste un run (idempotent via contrainte unique) |
 | `save_annotations(session, run_id, ...)` | Sauvegarde les annotations utilisateur |
 | `load_run(session, run_id)` | Charge un run complet (JSON + annotations) |
-| `list_runs(session, limit, offset)` | Liste résumé des runs (paginé) |
+| `list_runs(session, limit, offset, sort_by, sort_order)` | Liste résumé des runs (paginé, triable). `sort_by` est validé contre une allowlist (`id`, `created_at`, `last_inferred_at`, `image_name`, `predicted_class`, `predicted_confidence`, `seg_backend`, `has_annotations`) — défaut `last_inferred_at desc` |
 | `delete_run(session, run_id)` | Supprime un run + fichiers associés |
 
 ### `bcs_pipeline.lightning_module.LitClassificationModule`
@@ -608,7 +665,9 @@ python app.py
   - Déplacer les keypoints et les coins des bounding boxes par glisser-déposer
   - Éditer le masque de segmentation avec un pinceau (ajouter au foreground) et une gomme (repasser en background)
   - Ajouter des commentaires textuels sur chaque inférence
-- **Historique des inférences** : tableau paginé avec chargement, suppression (unitaire ou par lot), et indicateur d'annotations
+- **Historique des inférences** : tableau paginé avec chargement, suppression (unitaire ou par lot), et indicateur d'annotations.
+  - **Tri par colonne** : cliquer sur l'en-tête d'une colonne (ID, Date, Image, Race prédite, Confiance, Backend, Annotations) pour trier ascendant/descendant. Le tri est résolu côté serveur via une allowlist de colonnes (résistant à l'injection).
+  - **Promotion en tête de liste** : la colonne *Date* affiche `last_inferred_at` (et non plus `created_at`), un timestamp re-bumpé à chaque appel idempotent de `save_run`. Re-lancer une inférence sur une image déjà en base la fait remonter en tête sans créer de doublon ni perdre ses annotations.
 - **Export** : PNG de l'overlay, JSON des annotations (avec masque édité encodé en base64)
 - **Import** : charger un fichier JSON d'annotations pour appliquer les corrections
 - **Pré-chargement de la DB** : bouton dans l'interface pour lancer/arrêter le pré-chargement de toutes les images
@@ -617,7 +676,7 @@ python app.py
 
 Le pré-chargement peut être fait **depuis l'interface web** (bouton "Pré-charger la DB" avec bouton "Arrêter" pour stopper en cours) ou **en ligne de commande** via `scripts/preload_db.py`.
 
-La DB est stockée dans `data/bcs_app.db` (SQLite). Une contrainte d'unicité sur `(image_name, dataset, group_name, seg_backend)` garantit qu'il n'y a pas de doublons — le pré-chargement est idempotent et peut être arrêté/repris sans perte de données.
+La DB est stockée dans `data/bcs_app.db` (SQLite). Une contrainte d'unicité sur `(image_name, dataset, group_name, seg_backend)` garantit qu'il n'y a pas de doublons — le pré-chargement est idempotent et peut être arrêté/repris sans perte de données. Re-lancer une inférence sur une image déjà connue ne crée pas de nouvelle ligne : la ligne existante est conservée (avec ses annotations utilisateur), son timestamp `last_inferred_at` est re-bumpé et son JSON sidecar rafraîchi. L'API `/api/preload/status` accepte un paramètre `seg_backend` pour ne compter que les lignes du backend ciblé (utile lorsque plusieurs backends ont été pré-chargés sur le même dataset).
 
 ```bash
 # CLI : pré-charger avec les paramètres par défaut (DeepLabV3, top-5)
@@ -656,11 +715,11 @@ python scripts/preload_db.py --datasets Reddit
 | `GET /api/thumbnail/<dataset>/<group>/<file>` | — | Sert un thumbnail JPEG (256 px) |
 | `POST /api/inference` | JSON body | Lance les 3 pipelines sur une image de dataset |
 | `POST /api/inference/upload` | multipart | Lance les 3 pipelines sur une image uploadée |
-| `GET /api/history` | — | Liste paginée des runs (historique) |
+| `GET /api/history?limit=&offset=&sort=&order=` | — | Liste paginée des runs. `sort` ∈ {`id`, `created_at`, `last_inferred_at`, `image_name`, `predicted_class`, `predicted_confidence`, `seg_backend`, `has_annotations`} (défaut `last_inferred_at`), `order` ∈ {`asc`, `desc`} (défaut `desc`) |
 | `GET /api/history/<id>` | — | Détail d'un run (images base64 + annotations) |
 | `POST /api/history/<id>/annotations` | JSON body | Sauvegarde les annotations éditées (boxes, keypoints, masque, commentaires) |
 | `DELETE /api/history/<id>` | — | Supprime un run et ses fichiers associés |
-| `GET /api/preload/status` | — | État du pré-chargement (progression, compteur DB) |
+| `GET /api/preload/status?seg_backend=` | — | État du pré-chargement (progression, compteur DB). Le paramètre optionnel `seg_backend` restreint le compteur au backend donné, pour éviter un faux *complete* lorsque plusieurs backends sont mélangés en base |
 | `POST /api/preload/start` | JSON body | Lance le pré-chargement en arrière-plan |
 | `POST /api/preload/stop` | — | Arrête le pré-chargement en cours |
 

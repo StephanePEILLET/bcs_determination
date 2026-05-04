@@ -292,6 +292,11 @@
   .history-table-wrap.collapsed { max-height: 0; border-color: transparent; overflow: hidden; }
   .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .history-table th { text-align: left; padding: 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #6b7280; border-bottom: 2px solid #e5e7eb; }
+  .history-table th.sortable { cursor: pointer; user-select: none; }
+  .history-table th.sortable:hover { color: #1e293b; }
+  .history-table th .sort-ind { display: inline-block; margin-left: 4px; font-size: 9px; opacity: .35; }
+  .history-table th.sortable.active { color: #1d4ed8; }
+  .history-table th.sortable.active .sort-ind { opacity: 1; }
   .history-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
   .history-table tr:hover td { background: #f8fafc; }
   .history-table .btn-sm { padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px; cursor: pointer; background: #fff; color: #374151; margin-right: 4px; }
@@ -1319,8 +1324,8 @@ function exportJson() {
 /* ── Events ──────────────────────────────────────────── */
 $dataset.addEventListener("change", onDatasetChange);
 $group.addEventListener("change", onGroupChange);
-$backend.addEventListener("change", updateSam2State);
-$backendUp.addEventListener("change", updateSam2State);
+$backend.addEventListener("change", () => { updateSam2State(); checkPreloadStatus(); });
+$backendUp.addEventListener("change", () => { updateSam2State(); checkPreloadStatus(); });
 $btnRun.addEventListener("click", runInference);
 $btnPng.addEventListener("click", exportPng);
 $btnJson.addEventListener("click", exportJson);
@@ -1419,12 +1424,37 @@ let _historyRuns = [];
 let _historyTotal = 0;
 let _historyPage = 1;
 let _historyPageSize = 50;
+let _historySort = "last_inferred_at";
+let _historyOrder = "desc";
 const _historySelected = new Set();
+
+const HIST_COLUMNS = [
+  { key: "id", label: "#" },
+  { key: "last_inferred_at", label: "Date" },
+  { key: "image_name", label: "Image" },
+  { key: "predicted_class", label: "Race pr&eacute;dite" },
+  { key: "predicted_confidence", label: "Conf." },
+  { key: "seg_backend", label: "Backend" },
+  { key: "has_annotations", label: "Ann." },
+];
+
+function _toggleSort(col) {
+  if (_historySort === col) {
+    _historyOrder = _historyOrder === "asc" ? "desc" : "asc";
+  } else {
+    _historySort = col;
+    _historyOrder = (col === "image_name" || col === "seg_backend" || col === "predicted_class") ? "asc" : "desc";
+  }
+  _historyPage = 1;
+  loadHistory();
+}
 
 async function loadHistory() {
   try {
     const offset = (_historyPage - 1) * _historyPageSize;
-    const r = await fetch(`/api/history?limit=${_historyPageSize}&offset=${offset}`);
+    const url = `/api/history?limit=${_historyPageSize}&offset=${offset}`
+      + `&sort=${encodeURIComponent(_historySort)}&order=${encodeURIComponent(_historyOrder)}`;
+    const r = await fetch(url);
     const data = await r.json();
     _historyRuns = data.runs || [];
     _historyTotal = data.total || 0;
@@ -1453,11 +1483,17 @@ function renderHistory() {
     </div>
     <div class="history-table-wrap" id="history-table-wrap">
     <table class="history-table"><thead><tr>
-      <th style="width:32px;"><input type="checkbox" class="select-all" id="ht-checkall" ${allSelected?"checked":""}></th>
-      <th>#</th><th>Date</th><th>Image</th><th>Race pr&eacute;dite</th><th>Conf.</th><th>Backend</th><th>Ann.</th><th>Actions</th>
+      <th style="width:32px;"><input type="checkbox" class="select-all" id="ht-checkall" ${allSelected?"checked":""}></th>`;
+  for (const col of HIST_COLUMNS) {
+    const active = _historySort === col.key;
+    const ind = active ? (_historyOrder === "asc" ? "&#9650;" : "&#9660;") : "&#9651;";
+    html += `<th class="sortable${active?" active":""}" data-sort="${col.key}">${col.label}<span class="sort-ind">${ind}</span></th>`;
+  }
+  html += `<th>Actions</th>
     </tr></thead><tbody>`;
   for (const r of _historyRuns) {
-    const dt = r.created_at ? new Date(r.created_at).toLocaleString("fr-FR") : "—";
+    const dtRaw = r.last_inferred_at || r.created_at;
+    const dt = dtRaw ? new Date(dtRaw).toLocaleString("fr-FR") : "—";
     const annBadge = r.has_annotations
       ? '<span class="badge-ann yes">&#10003;</span>'
       : '<span class="badge-ann no">&mdash;</span>';
@@ -1513,6 +1549,9 @@ function renderHistory() {
     renderHistory();
   });
   $("ht-bulk-del").addEventListener("click", bulkDeleteSelected);
+  $histContent.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", () => _toggleSort(th.dataset.sort));
+  });
   $histContent.querySelectorAll("input.row-select").forEach(cb => {
     cb.addEventListener("change", e => {
       const id = parseInt(e.target.dataset.id, 10);
@@ -1573,7 +1612,8 @@ let _preloadPollTimer = null;
 
 async function checkPreloadStatus() {
   try {
-    const r = await fetch("/api/preload/status");
+    const backend = getBackend();
+    const r = await fetch(`/api/preload/status?seg_backend=${encodeURIComponent(backend)}`);
     const d = await r.json();
     if (d.running) {
       $btnPreload.style.display = "none";

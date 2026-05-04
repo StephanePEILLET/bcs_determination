@@ -51,8 +51,8 @@ STANFORD_DIR="$DATA_DIR/stanford_dogs/images"
 OXFORD_DIR="$DATA_DIR/Oxford-IIIT_pet_dataset"
 REDDIT_DIR="$DATA_DIR/Reddit_example"
 SAM2_CKPT="$SCRIPT_DIR/checkpoints/segmentation/sam2.1_hiera_large.pt"
-SAM3_CKPT="$SCRIPT_DIR/checkpoints/segmentation/sam3_image_model.pt"
-SAM3_BPE="$SCRIPT_DIR/checkpoints/segmentation/bpe_simple_vocab_16e6.txt.gz"
+SAM3_CKPT="$SCRIPT_DIR/checkpoints/segmentation/sam3/sam3.pt"
+SAM3_BPE="$SCRIPT_DIR/checkpoints/segmentation/sam3/bpe_simple_vocab_16e6.txt.gz"
 SAM3_HF_REPO="facebook/sam3"
 
 # GPU détecté (set in detect_gpu)
@@ -308,23 +308,16 @@ download_data() {
 
     # ── SAM 3 checkpoint (HuggingFace, auth-gated) ───────────────────────────
     # Optionnel : SAM 3 nécessite Python ≥ 3.12 et `hf auth login`.
-    # On télécharge dans checkpoints/segmentation/sam3/ puis on crée des liens
-    # symboliques vers les fichiers attendus (sam3_image_model.pt + BPE vocab).
+    # Le checkpoint est téléchargé directement dans checkpoints/segmentation/sam3/.
     if [[ -f "$SAM3_CKPT" ]]; then
         success "SAM 3 checkpoint déjà présent"
     else
         if command -v hf >/dev/null 2>&1; then
             info "Téléchargement de SAM 3 depuis HuggingFace ${SAM3_HF_REPO} (hf auth login requis)..."
-            mkdir -p "$(dirname "$SAM3_CKPT")/sam3"
-            if hf download "$SAM3_HF_REPO" --local-dir "$(dirname "$SAM3_CKPT")/sam3" 2>/dev/null; then
-                # Liens symboliques vers les fichiers attendus
-                local found_sam3_ckpt found_sam3_bpe
-                found_sam3_ckpt="$(find "$(dirname "$SAM3_CKPT")/sam3" -name '*.pt' -o -name '*.pth' 2>/dev/null | head -1)" || true
-                found_sam3_bpe="$(find "$(dirname "$SAM3_CKPT")/sam3" -name 'bpe_simple_vocab_16e6.txt.gz' 2>/dev/null | head -1)" || true
-                [[ -n "$found_sam3_ckpt" ]] && ln -sf "$found_sam3_ckpt" "$SAM3_CKPT"
-                [[ -n "$found_sam3_bpe"  ]] && ln -sf "$found_sam3_bpe"  "$SAM3_BPE"
+            mkdir -p "$(dirname "$SAM3_CKPT")"
+            if hf download "$SAM3_HF_REPO" --local-dir "$(dirname "$SAM3_CKPT")" 2>/dev/null; then
                 [[ -f "$SAM3_CKPT" ]] && success "SAM 3 checkpoint installé" \
-                                     || warn "SAM 3 téléchargé mais aucun .pt détecté — vérifier $(dirname "$SAM3_CKPT")/sam3"
+                                     || warn "SAM 3 téléchargé mais $SAM3_CKPT introuvable — vérifier le contenu de $(dirname "$SAM3_CKPT")"
             else
                 warn "SAM 3 désactivé : 'hf download ${SAM3_HF_REPO}' a échoué (auth requise ?)."
             fi

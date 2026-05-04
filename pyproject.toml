@@ -63,6 +63,10 @@ dev = [
 # OpenCV is pinned < 4.12 because 4.13 forces numpy ≥ 2, which conflicts
 # with the rest of the project (torch / pytorch-lightning still shipping for
 # numpy 1.x).
+# setuptools is pinned < 81 because upstream `sam3/model_builder.py` does
+# `import pkg_resources` at module load, and setuptools 81 dropped that
+# module from the default install. Without the pin, `import sam3` fails
+# with `ModuleNotFoundError: No module named 'pkg_resources'`.
 sam3 = [
     "sam3 @ git+https://github.com/facebookresearch/sam3.git",
     "huggingface_hub>=0.20",
@@ -72,6 +76,7 @@ sam3 = [
     "opencv-python<4.12",
     "opencv-python-headless<4.12",
     "opencv-contrib-python<4.12",
+    "setuptools<81",
 ]
 
 [tool.setuptools.packages.find]
