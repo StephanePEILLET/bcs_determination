@@ -575,7 +575,10 @@ async def api_preload_start(request: Request):
         return JSONResponse({"error": "Pr\u00e9-chargement d\u00e9j\u00e0 en cours"}, status_code=409)
 
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-    seg_backend = body.get("seg_backend", "deeplab")
+    # Preload defaults to SAM 3 — the canonical, dataset-wide bake. Other
+    # backends remain reachable via interactive inference but not via this
+    # bulk path.
+    seg_backend = body.get("seg_backend", "sam3")
     sam2_mode = body.get("sam2_mode", "prompted")
     sam3_mode = body.get("sam3_mode", "pose_concept_prompted")
 

@@ -37,6 +37,8 @@ from bcs_pipeline.app_checkpoints import (
     POSE_CKPT,
     REPO_ROOT,
     SAM2_CKPT,
+    SAM3_BPE,
+    SAM3_CKPT,
     resolve_classifier_ckpt,
 )
 from bcs_pipeline.datasets import (
@@ -78,15 +80,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--seg-backend",
-        choices=["deeplab", "sam2"],
-        default="deeplab",
-        help="Segmentation backend (default: deeplab).",
+        choices=["deeplab", "sam2", "sam3"],
+        default="sam3",
+        help="Segmentation backend (default: sam3 — the canonical preload bake).",
     )
     parser.add_argument(
         "--sam2-mode",
         choices=["prompted", "automatic", "pose_prompted"],
         default="prompted",
         help="SAM2 prompting mode (default: prompted).",
+    )
+    parser.add_argument(
+        "--sam3-mode",
+        choices=["prompted", "pose_prompted", "concept_prompted", "pose_concept_prompted"],
+        default="pose_concept_prompted",
+        help="SAM3 prompting mode (default: pose_concept_prompted).",
     )
     parser.add_argument(
         "--top-k", type=int, default=5,
@@ -138,15 +146,15 @@ def _run_inference(
     seg_backend: str,
     pose_model,
     sam2_mode: str = "prompted",
+    sam3_mode: str = "pose_concept_prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
 ) -> dict:
-    from PIL import Image
-
     img = img.convert("RGB")
     cls, seg, pose = run_core_inference(
         cls_model, class_names, seg_handle, seg_backend, pose_model, img,
-        sam2_mode=sam2_mode, top_k=top_k, conf_threshold=conf_threshold,
+        sam2_mode=sam2_mode, sam3_mode=sam3_mode,
+        top_k=top_k, conf_threshold=conf_threshold,
     )
     return format_inference_result(cls, seg, pose, image_name, img.size, seg_backend)
 
@@ -182,7 +190,10 @@ def main() -> None:
     total = len(all_entries)
     print(f"\n  Total images to process: {total}")
     print(f"  Segmentation backend   : {args.seg_backend}")
-    print(f"  SAM2 mode              : {args.sam2_mode}")
+    if args.seg_backend == "sam2":
+        print(f"  SAM2 mode              : {args.sam2_mode}")
+    elif args.seg_backend == "sam3":
+        print(f"  SAM3 mode              : {args.sam3_mode}")
     print()
 
     cls_model = None
@@ -206,11 +217,17 @@ def main() -> None:
         logger.warning("No classification checkpoint found in %s \u2014 skipping classification.",
                        CLASSIFICATION_CKPT_DIR)
 
-    seg_ckpt_path = str(SAM2_CKPT) if args.seg_backend == "sam2" else str(DEEPLAB_CKPT)
-    seg_ckpt_file = SAM2_CKPT if args.seg_backend == "sam2" else DEEPLAB_CKPT
+    seg_ckpt_file = {
+        "deeplab": DEEPLAB_CKPT,
+        "sam2": SAM2_CKPT,
+        "sam3": SAM3_CKPT,
+    }[args.seg_backend]
     if seg_ckpt_file.is_file():
         logger.info("Loading segmentation model (%s) from %s ...", args.seg_backend, seg_ckpt_file)
-        seg_handle = load_segmentation_backend(args.seg_backend, seg_ckpt_path)
+        load_kwargs = {}
+        if args.seg_backend == "sam3":
+            load_kwargs["sam3_bpe_path"] = str(SAM3_BPE) if SAM3_BPE.is_file() else None
+        seg_handle = load_segmentation_backend(args.seg_backend, str(seg_ckpt_file), **load_kwargs)
         logger.info("Segmentation model loaded.")
     else:
         logger.warning("Segmentation checkpoint not found (%s) \u2014 skipping segmentation.", seg_ckpt_file)
@@ -259,6 +276,7 @@ def main() -> None:
                 seg_backend=args.seg_backend,
                 pose_model=pose_model,
                 sam2_mode=args.sam2_mode,
+                sam3_mode=args.sam3_mode,
                 top_k=args.top_k,
                 conf_threshold=args.conf_threshold,
             )
