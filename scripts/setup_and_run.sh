@@ -186,9 +186,9 @@ setup_env() {
     # `uv sync` lit .python-version + pyproject.toml et résout :
     #   - le venv (.venv/) — créé si absent
     #   - PyTorch (sur Linux : cu124 via tool.uv.sources, sinon PyPI default)
-    #   - toutes les deps runtime + extras [dev,sam3]
-    info "Synchronisation de l'environnement (uv sync --extra dev --extra sam3) ..."
-    uv sync --extra dev --extra sam3
+    #   - toutes les deps runtime (incl. SAM 3) + extra [dev]
+    info "Synchronisation de l'environnement (uv sync --extra dev) ..."
+    uv sync --extra dev
     success "Environnement synchronisé"
 
     # ── Vérification des imports + device GPU ────────────────────────────────
@@ -375,7 +375,7 @@ launch_app() {
 
     section "Lancement de Body Pawsitive"
     info "Device : ${BOLD}$GPU_TYPE${NC}"
-    info "URL    : ${BOLD}http://localhost:5000${NC}"
+    info "URL    : ${BOLD}http://localhost:8000${NC}"
     info "Ctrl+C pour arrêter.\n"
     uv run python app.py
 }

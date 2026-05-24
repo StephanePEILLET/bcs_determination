@@ -608,7 +608,7 @@ def api_preload_stop():
 
 
 # ── Configuration ───────────────────────────────────────────────────────────
-DEFAULT_PORT = 5000
+DEFAULT_PORT = 8000
 # Override at runtime with:  PORT=8080 python app.py
 # ────────────────────────────────────────────────────────────────────────────
 

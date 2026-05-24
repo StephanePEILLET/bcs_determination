@@ -5,8 +5,7 @@
 # `conda env create -f environment.yaml`, run:
 #
 #     conda activate bcs_analysis
-#     pip install -e ".[dev]"          # base install (DeepLab + SAM 2 backends)
-#     pip install -e ".[dev,sam3]"     # full install (adds Meta SAM 3, gated)
+#     pip install -e ".[dev]"          # DeepLab + SAM 2 + Meta SAM 3 (SAM 3 in default deps)
 #
 # SAM 3 also requires `hf auth login` (HuggingFace token with access granted to
 # `facebook/sam3`).

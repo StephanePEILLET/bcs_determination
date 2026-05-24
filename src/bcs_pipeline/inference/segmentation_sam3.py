@@ -73,14 +73,15 @@ def load_sam3_model(
         missing = exc.name or ""
         if missing == "sam3":
             hint = (
-                "Install it with `pip install -e \".[sam3]\"` "
+                "Re-run `uv sync --extra dev` (or `pip install -e \".[dev]\"`) — "
+                "SAM 3 is now in the default dependencies "
                 "(requires Python ≥ 3.12, PyTorch ≥ 2.7, CUDA ≥ 12.6)."
             )
         elif missing == "pkg_resources":
             hint = (
                 "The upstream `sam3` package imports `pkg_resources`, which "
                 "setuptools ≥ 81 no longer ships. Run `uv pip install "
-                "'setuptools<81'` (this is now pinned in the [sam3] extra)."
+                "'setuptools<81'` (this is pinned in the default dependencies)."
             )
         else:
             hint = (

@@ -6,8 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "bcs-pipeline"
 version = "0.1.0"
 description = "BCS Determination deep-learning pipeline (classification, segmentation, pose)"
-# Python 3.12 is required by the [sam3] extra (Meta SAM 3). Older Python
-# versions still work for the DeepLab / SAM 2 backends but are unsupported.
+# Python 3.12 is required by the SAM 3 backend (Meta SAM 3, in default deps).
+# Older Python versions still work for the DeepLab / SAM 2 backends but are
+# unsupported.
 requires-python = ">=3.12"
 license = {text = "MIT"}
 
@@ -25,11 +26,16 @@ dependencies = [
     "hydra-core>=1.3",
     "pydantic>=2.0",
     "prodict>=0.8",
-    # Images / arrays
+    # Images / arrays. OpenCV is pinned < 4.12 because 4.13 forces numpy ≥ 2,
+    # which conflicts with the rest of the project (torch / pytorch-lightning
+    # still shipping for numpy 1.x).
     "pillow>=9.0",
     "numpy>=1.24",
+    "opencv-python<4.12",
     "opencv-python-headless<4.12",
+    "opencv-contrib-python<4.12",
     "scikit-learn>=1.1",
+    "scikit-image>=0.22",
     # Web app + persistence (FastAPI lifespan)
     "fastapi>=0.100",
     "uvicorn>=0.23",
@@ -38,6 +44,21 @@ dependencies = [
     "sqlalchemy>=2.0",
     # SAM 2 zero-shot backend (default segmenter alongside DeepLab)
     "sam2>=1.0",
+    # Meta SAM 3 zero-shot, concept-grounded segmenter. Requires Python ≥ 3.12,
+    # PyTorch ≥ 2.7, CUDA ≥ 12.6. Run `hf auth login` once to fetch the gated
+    # checkpoint from HuggingFace.
+    # einops / pycocotools / scikit-image are runtime imports of the upstream
+    # `sam3` package but missing from its `dependencies`; declared here so a
+    # fresh install is self-contained.
+    # setuptools is pinned < 81 because upstream `sam3/model_builder.py` does
+    # `import pkg_resources` at module load, and setuptools 81 dropped that
+    # module from the default install. Without the pin, `import sam3` fails
+    # with `ModuleNotFoundError: No module named 'pkg_resources'`.
+    "sam3 @ git+https://github.com/facebookresearch/sam3.git",
+    "huggingface_hub>=0.20",
+    "einops>=0.8",
+    "pycocotools>=2.0",
+    "setuptools<81",
     # CLI niceties
     "rich>=13.0",
 ]
@@ -53,30 +74,6 @@ dev = [
     "seaborn>=0.12",
     # Hyperparameter sweeps for train.py
     "hydra-optuna-sweeper>=1.2",
-]
-# Meta SAM 3 zero-shot, concept-grounded segmenter. Requires Python ≥ 3.12,
-# PyTorch ≥ 2.7, CUDA ≥ 12.6. Install with `pip install -e ".[sam3]"` and run
-# `hf auth login` once to fetch the gated checkpoint from HuggingFace.
-# einops / pycocotools / scikit-image are runtime imports of the upstream
-# `sam3` package but missing from its `dependencies`; declared here so a
-# fresh install of this extra is self-contained.
-# OpenCV is pinned < 4.12 because 4.13 forces numpy ≥ 2, which conflicts
-# with the rest of the project (torch / pytorch-lightning still shipping for
-# numpy 1.x).
-# setuptools is pinned < 81 because upstream `sam3/model_builder.py` does
-# `import pkg_resources` at module load, and setuptools 81 dropped that
-# module from the default install. Without the pin, `import sam3` fails
-# with `ModuleNotFoundError: No module named 'pkg_resources'`.
-sam3 = [
-    "sam3 @ git+https://github.com/facebookresearch/sam3.git",
-    "huggingface_hub>=0.20",
-    "einops>=0.8",
-    "pycocotools>=2.0",
-    "scikit-image>=0.22",
-    "opencv-python<4.12",
-    "opencv-python-headless<4.12",
-    "opencv-contrib-python<4.12",
-    "setuptools<81",
 ]
 
 [tool.setuptools.packages.find]

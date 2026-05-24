@@ -10,11 +10,10 @@ Le **Body Condition Score** est un indicateur clinique (échelle 1–9) utilisé
 
 ```bash
 # 1. Installer les dépendances
-uv sync --extra dev                   # sans SAM 3
-# ou : uv sync --extra dev --extra sam3  # avec SAM 3
+uv sync --extra dev                   # inclut SAM 3 par défaut
 
 # 2. Lancer l'application web
-uv run python app.py                  # http://localhost:5000
+uv run python app.py                  # http://localhost:8000
 
 # 3. Ou lancer une inférence en CLI
 uv run python inference.py --mode full --image_path data/Reddit_example/dog.jpg
@@ -39,7 +38,7 @@ chmod +x scripts/setup_and_run.sh
 conda env create -f environment.yaml
 conda activate bcs_analysis
 pip install -e ".[dev]"
-python app.py                         # http://localhost:5000
+python app.py                         # http://localhost:8000
 ```
 
 </details>
@@ -49,7 +48,7 @@ python app.py                         # http://localhost:5000
 
 ```bash
 docker build -t bcs_determination .
-docker run -p 5000:5000 bcs_determination
+docker run -p 8000:8000 bcs_determination
 ```
 
 </details>
@@ -257,9 +256,7 @@ crée le venv `.venv/`, résout torch+CUDA, installe le projet et écrit
 `uv.lock` pour la reproductibilité :
 
 ```bash
-uv sync --extra dev --extra sam3      # full (DeepLab + SAM 2 + SAM 3)
-# ou bien :
-uv sync --extra dev                   # sans SAM 3
+uv sync --extra dev                   # full (DeepLab + SAM 2 + SAM 3, par défaut)
 ```
 
 Lancement de l'app sans avoir à activer le venv :
@@ -291,9 +288,7 @@ Reddit) + des checkpoints SAM 2 / SAM 3, puis lancement de l'app.
 ```bash
 conda env create -f environment.yaml
 conda activate bcs_analysis
-pip install -e ".[dev]"          # base : DeepLab + SAM 2
-# ou bien :
-pip install -e ".[dev,sam3]"     # full : ajoute le backend SAM 3 (voir ci-dessous)
+pip install -e ".[dev]"          # DeepLab + SAM 2 + SAM 3 (SAM 3 dans les deps principales)
 ```
 
 > `environment.yaml` ne provisionne plus que Python 3.12 + PyTorch CUDA 12.4 ;
@@ -302,11 +297,11 @@ pip install -e ".[dev,sam3]"     # full : ajoute le backend SAM 3 (voir ci-desso
 > directives `[tool.uv.sources]` — le PyTorch CUDA arrive ici via la
 > directive `pytorch-cuda` dans `environment.yaml`.
 
-### SAM 3 — setup optionnel
+### SAM 3 — setup
 
-Le backend SAM 3 (Meta, zero-shot avec prompts textuels) est *gated* sur
-HuggingFace et requiert un environnement plus récent que les autres
-backends.
+Le backend SAM 3 (Meta, zero-shot avec prompts textuels) est inclus dans
+les dépendances par défaut. Le checkpoint est *gated* sur HuggingFace et
+requiert un environnement plus récent que les autres backends.
 
 **Prérequis :**
 
@@ -317,18 +312,15 @@ backends.
   Meta à valider, comptez ~1h pour l'approbation)
 - ~3,4 Go libres pour le checkpoint
 
-**Installation :**
+**Récupération du checkpoint :**
 
 ```bash
-# 1. Installer l'extra
-pip install -e ".[dev,sam3]"          # via pip
-# ou : ./scripts/setup_and_run.sh     # le script automatise tout
-
-# 2. S'authentifier auprès de HuggingFace (token avec read access)
+# 1. S'authentifier auprès de HuggingFace (token avec read access)
 hf auth login
 
-# 3. Télécharger le checkpoint dans checkpoints/segmentation/sam3/
+# 2. Télécharger le checkpoint dans checkpoints/segmentation/sam3/
 hf download facebook/sam3 --local-dir checkpoints/segmentation/sam3
+# (./scripts/setup_and_run.sh automatise les deux étapes)
 ```
 
 **Modes disponibles** (sélecteur `sam3_mode` dans l'UI ou
@@ -346,8 +338,8 @@ hf download facebook/sam3 --local-dir checkpoints/segmentation/sam3
 >
 > **Pin `setuptools<81`.** Le code amont `sam3/model_builder.py` fait
 > `import pkg_resources` au chargement du module, et setuptools 81+ ne
-> livre plus `pkg_resources` par défaut. La contrainte est désormais
-> portée par l'extra `[sam3]` du `pyproject.toml`, mais si vous voyez
+> livre plus `pkg_resources` par défaut. La contrainte est portée par les
+> dépendances principales du `pyproject.toml`, mais si vous voyez
 > `ModuleNotFoundError: No module named 'pkg_resources'` au démarrage
 > de l'app, exécutez `uv pip install 'setuptools<81'`.
 
@@ -649,7 +641,7 @@ chmod +x scripts/setup_and_run.sh
 # Option 2 : manuellement (venv existant)
 source .venv/bin/activate
 python app.py
-# → Ouvrir http://localhost:5000
+# → Ouvrir http://localhost:8000
 ```
 
 > Les modèles sont chargés en mémoire au premier appel d'inférence (lazy loading). Le premier run est plus lent, les suivants sont instantanés.
@@ -728,7 +720,7 @@ Exemple d'appel API programmatique :
 ```python
 import requests
 
-resp = requests.post("http://localhost:5000/api/inference", json={
+resp = requests.post("http://localhost:8000/api/inference", json={
     "dataset": "Reddit",
     "group": "all",
     "filename": "reddit_dog_1.jpg",
@@ -744,7 +736,7 @@ print(result["pose"]["num_detections"])           # ex: 1
 
 ```bash
 docker build -t bcs_determination .
-docker run -p 5000:5000 bcs_determination
+docker run -p 8000:8000 bcs_determination
 ```
 
 ---
