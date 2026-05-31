@@ -20,3 +20,9 @@ models
 utils
     Configuration loading / validation and logging utilities.
 """
+
+# Why: enables `Image.open(...)` to decode .HEIC/.HEIF across the whole app
+# (uploads, dataset gallery, inference pipeline) without per-call-site changes.
+import pillow_heif
+
+pillow_heif.register_heif_opener()

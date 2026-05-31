@@ -30,6 +30,7 @@ dependencies = [
     # which conflicts with the rest of the project (torch / pytorch-lightning
     # still shipping for numpy 1.x).
     "pillow>=9.0",
+    "pillow-heif>=0.18",
     "numpy>=1.24",
     "opencv-python<4.12",
     "opencv-python-headless<4.12",

@@ -18,8 +18,19 @@ STANFORD_IMAGES = STANFORD_ROOT / "Images"
 OXFORD_ROOT = REPO_ROOT / "data/Oxford-IIIT_pet_dataset"
 OXFORD_IMAGES = OXFORD_ROOT / "images"
 REDDIT_DIR = REPO_ROOT / "data/Reddit_example"
+CATS_OGR_ROOT = REPO_ROOT / "data/Cats_OGR_dataset"
+CATS_OGR_IMAGES = CATS_OGR_ROOT / "images"
 
-IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"})
+
+_CATS_OGR_VIEW_RE = re.compile(r"_(?P<view>DV|LV)(?:_Extra)?$", re.IGNORECASE)
+
+
+def _cats_ogr_view(path: Path) -> Optional[str]:
+    m = _CATS_OGR_VIEW_RE.search(path.stem)
+    if not m:
+        return None
+    return "Dorsal view" if m.group("view").upper() == "DV" else "Lateral view"
 
 
 def normalize_breed_name(name: str) -> str:
@@ -64,6 +75,13 @@ def collect_all_images() -> List[Tuple[Path, str, str, Optional[str]]]:
         for img_path in list_image_files(REDDIT_DIR):
             entries.append((img_path, "Reddit", "all", None))
 
+    if CATS_OGR_IMAGES.is_dir():
+        for img_path in list_image_files(CATS_OGR_IMAGES):
+            view = _cats_ogr_view(img_path)
+            if view is None:
+                continue
+            entries.append((img_path, "Cats OGR", view, None))
+
     return entries
 
 
@@ -96,11 +114,22 @@ def _reddit_groups() -> Dict[str, List[str]]:
     return {"all": [f.name for f in files]} if files else {}
 
 
+def _cats_ogr_groups() -> Dict[str, List[str]]:
+    groups: Dict[str, List[str]] = {}
+    for img_path in list_image_files(CATS_OGR_IMAGES):
+        view = _cats_ogr_view(img_path)
+        if view is None:
+            continue
+        groups.setdefault(view, []).append(img_path.name)
+    return {k: sorted(v, key=_natural_sort_key) for k, v in sorted(groups.items())}
+
+
 def get_datasets() -> Dict[str, Dict[str, List[str]]]:
     return {
         "Reddit": _reddit_groups(),
         "Stanford Dogs": _stanford_groups(),
         "Oxford-IIIT Pet": _oxford_groups(),
+        "Cats OGR": _cats_ogr_groups(),
     }
 
 
@@ -121,6 +150,8 @@ def resolve_image_path(dataset: str, group: str, filename: str) -> Optional[Path
         return None
     if dataset == "Oxford-IIIT Pet":
         return OXFORD_IMAGES / filename
+    if dataset == "Cats OGR":
+        return CATS_OGR_IMAGES / filename
     return None
 
 
@@ -131,4 +162,6 @@ def ground_truth(dataset: str, group: str) -> Optional[str]:
         return group if group else None
     if dataset == "Oxford-IIIT Pet":
         return group if group else None
+    if dataset == "Cats OGR":
+        return None
     return None
