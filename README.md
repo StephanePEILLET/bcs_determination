@@ -91,12 +91,12 @@ Trois backends interchangeables :
 
 Le masque est **éditable côté navigateur** (pinceau pour ajouter au foreground, gomme pour repasser au background) et le résultat est persisté en base avec les autres annotations.
 
-### 3. Détection de pose (OpenPose)
+### 3. Détection de pose (Ultralytics YOLO)
 
 Repérer les **points clés anatomiques** (colonne vertébrale, hanches, côtes, queue) permet de mesurer des rapports de proportions corporelles utilisés dans les grilles BCS vétérinaires (ex. visibilité des côtes, présence d'une taille vue de dessus, épaisseur de la base de la queue).
 
-- Protocole OpenPose (COCO + MPII) via les modèles pré-entraînés
-- Extraction de keypoints et calcul de features géométriques
+- Modèle **Ultralytics YOLO pose** fine-tuné sur chiens/chats (`checkpoints/pose/yolo_best.pt`)
+- Extraction de keypoints + bounding boxes, réutilisés comme invites visuelles pour SAM 2 / SAM 3
 
 ### 4. Vision classique (baseline sans deep learning)
 
@@ -105,6 +105,17 @@ Des méthodes de **détection de contours** traditionnelles (Canny, Sobel, Lapla
 - OpenCV : Canny multi-seuils, Sobel, Laplacien
 - scikit-image : Canny multi-scale, Prewitt, Roberts, Scharr
 - Kornia (GPU, différentiable) : Sobel, Canny, Laplacian
+
+### 5. Prédiction du BCS (régression)
+
+Pilier final qui consomme les précédents : la silhouette segmentée (fond remis en gris neutre) est encodée par le **backbone ViT** de la classification (figé), puis une petite **tête MLP** régresse le score corporel continu (échelle 1–9).
+
+- Backbone ViT figé (`vit_dogs_cats`) → embedding CLS (768) → MLP (768→128→1)
+- Entraînement **Leave-One-Cat-Out** sur le dataset OGR (`scripts/train_bcs_regression.py`), checkpoints dans `checkpoints/bcs_regression/fold_*/`
+- Inférence par **ensemble** : la prédiction moyenne des 11 têtes (une par fold) est servie, l'écart-type inter-fold servant d'indicateur d'incertitude
+- Branché dans le pipeline complet (`inference.py --mode full`), l'API/UI web (badge BCS + section dédiée) et l'historique (colonne BCS)
+
+> ⚠️ **Limite actuelle du modèle (qualité, pas intégration).** Sur le jeu OGR (11 chats, 22 vues), la métrique LOCO-CV est MAE = 0.82 / RMSE = 0.92 — mais le modèle **collapse vers la moyenne** : il prédit ~4.8 quasi quel que soit l'entrée (étendue des prédictions 4.69–4.91 contre un vrai BCS de 4 à 6). Le MAE correspond donc essentiellement au baseline « toujours prédire la moyenne ». À améliorer : davantage de données, dégel partiel du backbone, ou features géométriques issues de la pose. L'intégration sert le score tel que produit par le modèle, sans le masquer.
 
 ## Stack technique
 
@@ -450,6 +461,19 @@ python inference.py \
     --top_k 5
 ```
 
+Pipeline complet avec score BCS (la régression consomme le masque de segmentation) :
+
+```bash
+python inference.py --mode full \
+    --image_path data/Reddit_example/dog.jpg \
+    --checkpoint_path checkpoints/classification/vit_dogs_cats/last.ckpt \
+    --model_name vit --num_classes 132 \
+    --seg_checkpoint checkpoints/segmentation/deeplabv3_resnet50_last-v1.ckpt \
+    --pose_checkpoint checkpoints/pose/yolo_best.pt \
+    --bcs_checkpoint checkpoints/bcs_regression \
+    --output outputs/dog_full.png
+```
+
 ### From Python
 
 ```python
@@ -473,6 +497,16 @@ image = Image.open("dog.jpg").convert("RGB")
 result = predict_single(model, image, class_names=class_names, top_k=5)
 print(result)
 # {"class_id": 42, "class_name": "Golden_retriever", "confidence": 0.97, "top_k": [...]}
+```
+
+Régression BCS seule (ensemble des folds, masque optionnel) :
+
+```python
+from bcs_pipeline.inference import load_bcs_model, predict_bcs
+
+bcs = load_bcs_model("checkpoints/bcs_regression")
+print(predict_bcs(bcs, "dog.jpg", mask=None))
+# {"bcs": 4.82, "category": "Idéal", "std": 0.09, "num_folds": 11, "scale": [1, 9], ...}
 ```
 
 ---
