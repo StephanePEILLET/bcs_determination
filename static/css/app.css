@@ -192,6 +192,15 @@
   .breed-label .breed-name { font-size: 18px; }
   .breed-label .breed-conf { font-size: 13px; opacity: .8; font-weight: 400; }
   .breed-label .label-tag { font-size: 11px; opacity: .6; margin-right: 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .breed-label .bcs-badge {
+    font-size: 13px; font-weight: 700; color: #fff;
+    padding: 3px 10px; border-radius: 999px; line-height: 1;
+  }
+  .breed-label .species-badge {
+    font-size: 12px; font-weight: 700; color: #fff;
+    padding: 3px 10px; border-radius: 999px; line-height: 1;
+    text-transform: uppercase; letter-spacing: .3px;
+  }
 
   .observations { background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   .observations h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }

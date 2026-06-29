@@ -66,8 +66,11 @@ class InferenceRun(Base):
     sam2_mode = Column(String, default="prompted")
     predicted_class = Column(String, nullable=True)
     predicted_confidence = Column(Float, nullable=True)
+    predicted_species = Column(String, nullable=True)
     num_pose_detections = Column(Integer, default=0)
     best_pose_conf = Column(Float, nullable=True)
+    predicted_bcs = Column(Float, nullable=True)
+    bcs_category = Column(String, nullable=True)
     output_path = Column(String, nullable=True)
 
     annotation = relationship(
@@ -93,8 +96,13 @@ class InferenceRun(Base):
             "predicted_confidence": round(self.predicted_confidence, 2)
             if self.predicted_confidence
             else None,
+            "predicted_species": self.predicted_species,
             "seg_backend": self.seg_backend,
             "num_pose_detections": self.num_pose_detections,
+            "predicted_bcs": round(self.predicted_bcs, 2)
+            if self.predicted_bcs is not None
+            else None,
+            "bcs_category": self.bcs_category,
             "has_annotations": has_ann,
             "num_comments": num_comments,
         }
@@ -161,6 +169,20 @@ def _migrate_schema(engine) -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE user_annotations ADD COLUMN mask_path VARCHAR"))
             logger.info("Migrated user_annotations: added mask_path column")
+
+    # ── inference_runs.predicted_bcs / bcs_category (added later) ───────────
+    if "inference_runs" in table_names:
+        run_cols = {c["name"] for c in inspector.get_columns("inference_runs")}
+        with engine.begin() as conn:
+            if "predicted_bcs" not in run_cols:
+                conn.execute(text("ALTER TABLE inference_runs ADD COLUMN predicted_bcs FLOAT"))
+                logger.info("Migrated inference_runs: added predicted_bcs column")
+            if "bcs_category" not in run_cols:
+                conn.execute(text("ALTER TABLE inference_runs ADD COLUMN bcs_category VARCHAR"))
+                logger.info("Migrated inference_runs: added bcs_category column")
+            if "predicted_species" not in run_cols:
+                conn.execute(text("ALTER TABLE inference_runs ADD COLUMN predicted_species VARCHAR"))
+                logger.info("Migrated inference_runs: added predicted_species column")
 
     # ── inference_runs.last_inferred_at (added later) ───────────────────────
     if "inference_runs" in table_names:
@@ -238,6 +260,7 @@ def save_run(
     GETs)."""
     cls = result.get("classification", {})
     pose = result.get("pose", {})
+    bcs = result.get("bcs") or {}
     img_size = result.get("image_size", [0, 0])
     image_name = result.get("image_name", "unknown")
 
@@ -253,8 +276,13 @@ def save_run(
         sam2_mode=sam2_mode,
         predicted_class=cls.get("class_name"),
         predicted_confidence=cls.get("confidence"),
+        predicted_species=result.get("species", {}).get("species")
+        if isinstance(result.get("species"), dict)
+        else None,
         num_pose_detections=pose.get("num_detections", 0),
         best_pose_conf=pose.get("best_conf"),
+        predicted_bcs=bcs.get("bcs"),
+        bcs_category=bcs.get("category"),
     )
     session.add(run)
     try:
@@ -395,6 +423,7 @@ _SORTABLE_COLUMNS = {
     "last_inferred_at": InferenceRun.last_inferred_at,
     "image_name": InferenceRun.image_name,
     "predicted_class": InferenceRun.predicted_class,
+    "predicted_species": InferenceRun.predicted_species,
     "predicted_confidence": InferenceRun.predicted_confidence,
     "seg_backend": InferenceRun.seg_backend,
 }

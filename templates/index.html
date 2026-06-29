@@ -14,7 +14,7 @@
   <div class="header-left">
     <div>
       <h1>Body Pawsitive</h1>
-      <p>Classification de race &middot; Segmentation (DeepLabV3 / SAM 2) &middot; D&eacute;tection de pose</p>
+      <p>Score corporel (BCS) &middot; Classification de race &middot; Segmentation (DeepLabV3 / SAM 2 / SAM 3) &middot; D&eacute;tection de pose</p>
     </div>
   </div>
   <div class="header-right">
@@ -132,8 +132,10 @@
         </div>
         <div class="breed-label" id="overlay-breed">
           <span class="label-tag">Pr&eacute;diction</span>
+          <span class="species-badge" id="species-badge-ovr" style="display:none;"></span>
           <span class="breed-name" id="breed-name-ovr">&mdash;</span>
           <span class="breed-conf" id="breed-conf-ovr"></span>
+          <span class="bcs-badge" id="bcs-badge-ovr" style="display:none;"></span>
         </div>
         <div class="comments-panel" id="comments-panel" style="display:none;">
           <h4>Commentaires</h4>
@@ -148,6 +150,7 @@
     <div class="observations">
       <h3>Observations</h3>
       <div class="obs-grid">
+        <div class="obs-section"><h4>Score corporel (BCS)</h4><div id="obs-bcs"></div></div>
         <div class="obs-section"><h4>Classification (top-5 races)</h4><div id="obs-topk"></div></div>
         <div class="obs-section"><h4>Segmentation</h4><div id="obs-seg"></div></div>
         <div class="obs-section"><h4>Pose</h4><div id="obs-pose"></div></div>

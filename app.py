@@ -45,11 +45,24 @@ from bcs_pipeline.app_checkpoints import (
     CLASSIFICATION_MODEL_NAME,
     CLASSIFICATION_NUM_CLASSES,
     CLASSIFICATION_CKPT_DIR,
+    SPECIES_MODEL_NAME,
+    DOG_BREED_MODEL_NAME,
+    DOG_BREED_NUM_CLASSES,
+    CAT_BREED_MODEL_NAME,
+    CAT_BREED_NUM_CLASSES,
+    STANFORD_DATA_DIR,
+    OXFORD_DATA_DIR,
     DEEPLAB_CKPT,
     SAM2_CKPT,
     SAM3_CKPT,
     SAM3_BPE,
     POSE_CKPT,
+    BCS_REGRESSION_DIR,
+    bcs_regression_available,
+    bcs_available,
+    resolve_species_ckpt,
+    resolve_dog_breed_ckpt,
+    resolve_cat_breed_ckpt,
     REPO_ROOT,
     describe_active_models,
     resolve_classifier_ckpt,
@@ -75,10 +88,16 @@ from bcs_pipeline.db import (
     session_scope,
 )
 from bcs_pipeline.inference import (
+    load_bcs_model,
+    load_bcs_models,
+    load_cat_class_names,
     load_classification_model,
     load_combined_class_names,
+    load_dog_class_names,
     load_pose_model,
     load_segmentation_backend,
+    load_species_model,
+    predict_bcs,
     render_combined,
 )
 from bcs_pipeline.inference.visualization import (
@@ -102,6 +121,12 @@ _MODELS: dict = {
     "class_names": None,
     "seg": {},
     "pose": None,
+    "bcs": None,
+    "species": None,
+    "dog_breed": None,
+    "dog_breed_names": None,
+    "cat_breed": None,
+    "cat_breed_names": None,
 }
 
 
@@ -273,6 +298,69 @@ def _ensure_pose():
     return _MODELS["pose"]
 
 
+def _ensure_species():
+    """Lazily load the binary dog/cat species classifier, or ``None``.
+
+    Optional cascade stage 1: when absent, the app falls back to the combined
+    breed classifier without species routing.
+    """
+    if _MODELS["species"] is not None:
+        return _MODELS["species"]
+    ckpt = resolve_species_ckpt()
+    if ckpt is None:
+        return None
+    logger.info("Loading species classifier from %s", ckpt.relative_to(REPO_ROOT))
+    _MODELS["species"] = load_species_model(str(ckpt), model_name=SPECIES_MODEL_NAME)
+    return _MODELS["species"]
+
+
+def _ensure_dog_breed():
+    """Lazily load the dog-only breed classifier as ``(model, names)`` or ``None``."""
+    if _MODELS["dog_breed"] is not None:
+        return _MODELS["dog_breed"], _MODELS["dog_breed_names"]
+    ckpt = resolve_dog_breed_ckpt()
+    if ckpt is None:
+        return None
+    logger.info("Loading dog breed classifier from %s", ckpt.relative_to(REPO_ROOT))
+    _MODELS["dog_breed"] = load_classification_model(
+        str(ckpt), model_name=DOG_BREED_MODEL_NAME, num_classes=DOG_BREED_NUM_CLASSES,
+    )
+    _MODELS["dog_breed_names"] = load_dog_class_names(str(STANFORD_DATA_DIR))
+    return _MODELS["dog_breed"], _MODELS["dog_breed_names"]
+
+
+def _ensure_cat_breed():
+    """Lazily load the cat-only breed classifier as ``(model, names)`` or ``None``."""
+    if _MODELS["cat_breed"] is not None:
+        return _MODELS["cat_breed"], _MODELS["cat_breed_names"]
+    ckpt = resolve_cat_breed_ckpt()
+    if ckpt is None:
+        return None
+    logger.info("Loading cat breed classifier from %s", ckpt.relative_to(REPO_ROOT))
+    _MODELS["cat_breed"] = load_classification_model(
+        str(ckpt), model_name=CAT_BREED_MODEL_NAME, num_classes=CAT_BREED_NUM_CLASSES,
+    )
+    _MODELS["cat_breed_names"] = load_cat_class_names(str(OXFORD_DATA_DIR))
+    return _MODELS["cat_breed"], _MODELS["cat_breed_names"]
+
+
+def _ensure_bcs():
+    """Lazily load the per-species BCS registry ``{"cat": .., "dog": ..}``.
+
+    Optional: when no ``checkpoints/bcs_regression`` folds are present the app
+    still serves classification/segmentation/pose without BCS. Entries are
+    ``None`` for a species with no trained model (e.g. the dog placeholder).
+    """
+    if _MODELS["bcs"] is not None:
+        return _MODELS["bcs"]
+    if not (bcs_regression_available() or bcs_available("cat") or bcs_available("dog")):
+        return None
+    logger.info("Loading BCS regression models from %s",
+                BCS_REGRESSION_DIR.relative_to(REPO_ROOT))
+    _MODELS["bcs"] = load_bcs_models(str(BCS_REGRESSION_DIR))
+    return _MODELS["bcs"]
+
+
 def _img_to_b64(img: Image.Image, fmt: str = "PNG") -> str:
     buf = io.BytesIO()
     img.save(buf, format=fmt)
@@ -292,21 +380,47 @@ def _run_inference_on_image(
     cls_model, class_names = _ensure_classifier()
     seg_handle = _ensure_segmenter(seg_backend)
     pose_model = _ensure_pose()
+    species_model = _ensure_species()
+    dog_breed = _ensure_dog_breed()
+    cat_breed = _ensure_cat_breed()
 
-    cls, seg, pose = run_core_inference(
+    cls, seg, pose, species = run_core_inference(
         cls_model, class_names, seg_handle, seg_backend, pose_model, img,
         sam2_mode=sam2_mode, sam3_mode=sam3_mode,
         top_k=top_k, conf_threshold=conf_threshold,
+        species_model=species_model,
+        dog_breed=dog_breed,
+        cat_breed=cat_breed,
     )
+
+    # BCS regression (optional): score the silhouette using the seg mask, routing
+    # to the dog- or cat-specific model by predicted species. Falls back to the
+    # cat model when species is unknown (the only trained model today).
+    bcs = None
+    bcs_models = _ensure_bcs()
+    if bcs_models is not None:
+        species_key = species["species"] if species else "cat"
+        bcs_handle = bcs_models.get(species_key) or bcs_models.get("cat")
+        if bcs_handle is not None:
+            try:
+                bcs = predict_bcs(bcs_handle, img, mask=seg.get("mask"))
+                bcs["model_species"] = species_key if bcs_models.get(species_key) else "cat"
+            except Exception:
+                logger.exception("BCS prediction failed for %s", image_name)
+        elif species_key == "dog":
+            # Dog model is a placeholder until dog BCS data is collected.
+            bcs = {"bcs": None, "category": None, "unavailable_for": "dog"}
 
     canvas = img.convert("RGB")
     seg_layer = render_segmentation_layer(canvas, seg["mask"])
     full = render_combined(
-        canvas, classification=cls, segmentation=seg, pose=pose,
+        canvas, classification=cls, segmentation=seg, pose=pose, bcs=bcs,
         show_label=False,
     )
 
-    result = format_inference_result(cls, seg, pose, image_name, img.size, seg_backend)
+    result = format_inference_result(
+        cls, seg, pose, image_name, img.size, seg_backend, bcs=bcs, species=species,
+    )
     result["source_b64"] = _img_to_b64(img, "JPEG")
     result["seg_b64"] = _img_to_b64(seg_layer, "PNG")
     result["full_b64"] = _img_to_b64(full, "PNG")

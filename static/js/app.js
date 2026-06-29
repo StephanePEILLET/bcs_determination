@@ -9,8 +9,9 @@ const $btnImport=$("btn-import-json"), $importFile=$("import-json-file");
 const $spinner=$("spinner"), $error=$("error-msg"), $results=$("results");
 const $srcImg=$("img-source");
 const $ovrBadge=$("overlay-badge"), $gtName=$("gt-name"), $srcBreed=$("source-breed");
-const $breedOvr=$("breed-name-ovr"), $confOvr=$("breed-conf-ovr");
-const $topk=$("obs-topk"), $segObs=$("obs-seg"), $poseObs=$("obs-pose");
+const $breedOvr=$("breed-name-ovr"), $confOvr=$("breed-conf-ovr"), $bcsBadgeOvr=$("bcs-badge-ovr");
+const $speciesBadgeOvr=$("species-badge-ovr");
+const $topk=$("obs-topk"), $segObs=$("obs-seg"), $poseObs=$("obs-pose"), $bcsObs=$("obs-bcs");
 const $dropZone=$("drop-zone"), $fileInput=$("file-input"), $dzText=$("dz-text"), $dzPreview=$("dz-preview");
 const $canvas=$("editor-canvas"), $canvasWrap=$("canvas-wrap");
 const $commentInput=$("comment-input"), $commentAdd=$("comment-add"), $commentsList=$("comments-list"), $commentsPanel=$("comments-panel");
@@ -97,6 +98,63 @@ function handleFile(f) {
 function showSpinner(v) { $spinner.classList.toggle("active", v); $btnRun.disabled = v; }
 function showError(msg) { $error.textContent = msg; $error.classList.add("active"); }
 function hideError() { $error.classList.remove("active"); }
+// Color band for a 1–9 BCS: blue (thin) → green (ideal) → red (overweight).
+function bcsColor(score) {
+  if (score < 4) return "#3b82f6";
+  if (score <= 5) return "#10b981";
+  return "#ef4444";
+}
+
+// Species badge (cascade stage 1). Accepts the top-level `species` dict and the
+// classification dict (which may carry `species` after routing).
+function renderSpecies(species, cls) {
+  if (!$speciesBadgeOvr) return;
+  const name = (species && species.species) || (cls && cls.species) || null;
+  if (!name) { $speciesBadgeOvr.style.display = "none"; return; }
+  const label = name === "dog" ? "Chien" : name === "cat" ? "Chat" : name;
+  const conf = species && species.confidence != null
+    ? ` ${species.confidence.toFixed(0)}%` : "";
+  $speciesBadgeOvr.textContent = `${label}${conf}`;
+  $speciesBadgeOvr.style.background = name === "dog" ? "#6366f1" : "#ec4899";
+  $speciesBadgeOvr.style.display = "";
+}
+
+function renderBcs(bcs) {
+  if (bcs && bcs.unavailable_for) {
+    const sp = bcs.unavailable_for === "dog" ? "chien" : bcs.unavailable_for;
+    if ($bcsObs) $bcsObs.innerHTML = `<div class="obs-kv"><span class="k">BCS</span><span class="v">— (indisponible pour ${sp} : modèle non encore entraîné)</span></div>`;
+    if ($bcsBadgeOvr) $bcsBadgeOvr.style.display = "none";
+    return;
+  }
+  if (!bcs || bcs.bcs == null) {
+    if ($bcsObs) $bcsObs.innerHTML = '<div class="obs-kv"><span class="k">BCS</span><span class="v">— (modèle indisponible)</span></div>';
+    if ($bcsBadgeOvr) $bcsBadgeOvr.style.display = "none";
+    return;
+  }
+  const score = bcs.bcs, color = bcsColor(score), pct = Math.max(1, (score / 9) * 100);
+  const masked = bcs.masked ? "silhouette masquée" : "image entière";
+  const modelSp = bcs.model_species ? ` · modèle ${bcs.model_species === "cat" ? "chat" : bcs.model_species === "dog" ? "chien" : bcs.model_species}` : "";
+  if ($bcsObs) {
+    $bcsObs.innerHTML = `
+      <div class="obs-kv">
+        <span class="k">Score</span><span class="v" style="color:${color};font-weight:700;font-size:1.25em;">${score.toFixed(1)} / 9</span>
+        <span class="k">État</span><span class="v" style="color:${color};font-weight:600;">${bcs.category || "—"}</span>
+      </div>
+      <div class="obs-bar-wrap" style="margin-top:8px;">
+        <div class="obs-bar"><div class="obs-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+      </div>
+      <div class="obs-kv" style="margin-top:8px;">
+        <span class="k">Incertitude</span><span class="v">±${(bcs.std != null ? bcs.std : 0).toFixed(2)} (${bcs.num_folds || 0} folds)</span>
+        <span class="k">Entrée</span><span class="v">${masked}${modelSp}</span>
+      </div>`;
+  }
+  if ($bcsBadgeOvr) {
+    $bcsBadgeOvr.textContent = `BCS ${score.toFixed(1)}/9`;
+    $bcsBadgeOvr.style.background = color;
+    $bcsBadgeOvr.style.display = "";
+  }
+}
+
 function showResults(v) {
   $results.classList.toggle("active", v);
   $actionBar.style.display = v ? "" : "none";
@@ -665,6 +723,7 @@ function displayResults(d) {
   S.classification = d.classification;
   S.segmentation = d.segmentation;
   S.pose = d.pose;
+  S.bcs = d.bcs || null;
 
   const ann = d.pose_annotations || {};
   S.boxes = (ann.boxes || []).map(b => [...b]);
@@ -685,6 +744,7 @@ function displayResults(d) {
   const cls = d.classification;
   $breedOvr.textContent = cls.class_name || "\u2014";
   $confOvr.textContent = cls.confidence.toFixed(1) + " %";
+  renderSpecies(d.species, cls);
   $ovrBadge.textContent = d.segmentation.backend;
 
   $topk.innerHTML = "";
@@ -725,6 +785,8 @@ function displayResults(d) {
   if (pose.best_conf !== null) ph += `<span class="k">Meilleure conf.</span><span class="v">${pose.best_conf.toFixed(2)}</span>`;
   ph += '</div>';
   $poseObs.innerHTML = ph;
+
+  renderBcs(d.bcs);
 
   showResults(true);
 
@@ -819,6 +881,7 @@ function exportJson() {
     classification: S.classification,
     segmentation: S.segmentation,
     pose: S.pose,
+    bcs: S.bcs,
     pose_annotations: {
       boxes: S.boxes,
       keypoints: S.keypoints,
@@ -959,8 +1022,10 @@ const HIST_COLUMNS = [
   { key: "id", label: "#" },
   { key: "last_inferred_at", label: "Date" },
   { key: "image_name", label: "Image" },
+  { key: "predicted_species", label: "Esp&egrave;ce" },
   { key: "predicted_class", label: "Race pr&eacute;dite" },
   { key: "predicted_confidence", label: "Conf." },
+  { key: "predicted_bcs", label: "BCS" },
   { key: "seg_backend", label: "Backend" },
   { key: "has_annotations", label: "Ann." },
 ];
@@ -970,7 +1035,7 @@ function _toggleSort(col) {
     _historyOrder = _historyOrder === "asc" ? "desc" : "asc";
   } else {
     _historySort = col;
-    _historyOrder = (col === "image_name" || col === "seg_backend" || col === "predicted_class") ? "asc" : "desc";
+    _historyOrder = (col === "image_name" || col === "seg_backend" || col === "predicted_class" || col === "predicted_species") ? "asc" : "desc";
   }
   _historyPage = 1;
   loadHistory();
@@ -1030,8 +1095,10 @@ function renderHistory() {
       <td>${r.id}</td>
       <td>${dt}</td>
       <td>${r.image_name || "—"}</td>
+      <td>${r.predicted_species ? (r.predicted_species === "dog" ? "Chien" : r.predicted_species === "cat" ? "Chat" : r.predicted_species) : "—"}</td>
       <td>${r.predicted_class || "—"}</td>
       <td>${r.predicted_confidence != null ? r.predicted_confidence.toFixed(1) + "%" : "—"}</td>
+      <td>${r.predicted_bcs != null ? '<b style="color:'+bcsColor(r.predicted_bcs)+';">'+r.predicted_bcs.toFixed(1)+'</b>' : "—"}</td>
       <td>${r.seg_backend}</td>
       <td>${annBadge}</td>
       <td>

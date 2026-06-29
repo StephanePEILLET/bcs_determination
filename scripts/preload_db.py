@@ -151,12 +151,14 @@ def _run_inference(
     conf_threshold: float = 0.25,
 ) -> dict:
     img = img.convert("RGB")
-    cls, seg, pose = run_core_inference(
+    cls, seg, pose, species = run_core_inference(
         cls_model, class_names, seg_handle, seg_backend, pose_model, img,
         sam2_mode=sam2_mode, sam3_mode=sam3_mode,
         top_k=top_k, conf_threshold=conf_threshold,
     )
-    return format_inference_result(cls, seg, pose, image_name, img.size, seg_backend)
+    return format_inference_result(
+        cls, seg, pose, image_name, img.size, seg_backend, species=species,
+    )
 
 
 def main() -> None:
