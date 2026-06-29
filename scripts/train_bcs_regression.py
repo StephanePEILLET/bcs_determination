@@ -35,6 +35,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from PIL import Image
 from pillow_heif import register_heif_opener
+from tqdm.auto import tqdm
 
 # ── Make the ``src/`` package importable ─────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -56,8 +57,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hidden-dim", type=int, default=128, help="MLP hidden dimension")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate in head")
     parser.add_argument("--patience", type=int, default=20, help="Early stopping patience (0=disabled)")
+    parser.add_argument("--species", type=str, default="cat", choices=["cat", "dog"],
+                        help="Which species BCS model to train. 'dog' is a placeholder "
+                             "until a dog BCS dataset is provided.")
+    parser.add_argument("--data-dir", type=str, default=None,
+                        help="Dataset directory. Default: data/Cats_OGR_dataset for cat.")
     parser.add_argument("--output-dir", type=str, default=None,
-                        help="Output directory (default: checkpoints/bcs_regression/)")
+                        help="Output directory (default: checkpoints/bcs_regression/<species>/)")
     parser.add_argument("--num-workers", type=int, default=8, help="DataLoader num_workers")
     parser.add_argument("--sam3-mode", type=str, default="prompted",
                         choices=["prompted", "concept", "automatic"],
@@ -103,13 +109,13 @@ def compute_masks(records: list, device: torch.device, sam3_mode: str) -> list:
     print("✓ SAM3 chargé")
 
     masks = []
-    for i, rec in enumerate(records):
+    for rec in tqdm(records, desc="Masques SAM3", unit="img"):
         img = Image.open(rec["path"]).convert("RGB")
         seg = predict_segmentation_with("sam3", sam3_handle, img, sam3_mode=sam3_mode)
         mask = seg["binary_mask"]
         masks.append(mask)
         coverage = mask.sum() / mask.size * 100
-        print(f"  [{i+1}/{len(records)}] {rec['Animal_ID']}-{rec['view']}: {coverage:.1f}% animal")
+        tqdm.write(f"  {rec['Animal_ID']}-{rec['view']}: {coverage:.1f}% animal")
 
     # Free SAM3 GPU memory
     del sam3_handle
@@ -234,18 +240,41 @@ def main():
     args = parse_args()
     pl.seed_everything(args.seed, workers=True)
 
-    # Output directory
-    output_dir = Path(args.output_dir) if args.output_dir else REPO_ROOT / "checkpoints" / "bcs_regression"
+    # Output directory — per-species so cat and dog models live side by side
+    # under checkpoints/bcs_regression/{cat,dog}/.
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else REPO_ROOT / "checkpoints" / "bcs_regression" / args.species
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Species: {args.species}")
     print(f"Device: {device}")
     print(f"Output: {output_dir}")
 
     # ── 1. Load dataset ──────────────────────────────────────────────
-    data_dir = REPO_ROOT / "data" / "Cats_OGR_dataset"
+    if args.data_dir:
+        data_dir = Path(args.data_dir)
+    elif args.species == "cat":
+        data_dir = REPO_ROOT / "data" / "Cats_OGR_dataset"
+    else:
+        data_dir = REPO_ROOT / "data" / "Dogs_BCS_dataset"
+
+    if not data_dir.is_dir() or not any(data_dir.glob("*.xlsx")):
+        print(
+            f"\n[PLACEHOLDER] No BCS dataset found for species '{args.species}' at "
+            f"{data_dir}.\nThe {args.species} BCS model cannot be trained yet. "
+            f"Provide a dataset (Excel + images/ matching load_dataset()) and rerun:\n"
+            f"    python scripts/train_bcs_regression.py --species {args.species} "
+            f"--data-dir <path>\n"
+        )
+        # Keep the (empty) output dir so the cascade can detect 'no model yet'.
+        sys.exit(0)
+
     df_obs = load_dataset(data_dir)
-    print(f"\n{len(df_obs)} images, {df_obs['Animal_ID'].nunique()} chats, "
+    print(f"\n{len(df_obs)} images, {df_obs['Animal_ID'].nunique()} animals, "
           f"BCS ∈ [{df_obs['BCS'].min()}, {df_obs['BCS'].max()}]")
 
     # ── 2. Pre-compute SAM3 masks ────────────────────────────────────
@@ -266,10 +295,14 @@ def main():
     all_predictions = []
     t0 = time.time()
 
-    for fold_idx, fold_cat in enumerate(cat_ids):
-        print(f"\n{'='*60}")
-        print(f"  Fold {fold_idx+1}/{len(cat_ids)} — Hold-out: {fold_cat}")
-        print(f"{'='*60}")
+    fold_bar = tqdm(
+        list(enumerate(cat_ids)), desc="LOCO folds", unit="fold", total=len(cat_ids),
+    )
+    for fold_idx, fold_cat in fold_bar:
+        fold_bar.set_postfix_str(f"hold-out={fold_cat}")
+        tqdm.write(f"\n{'='*60}")
+        tqdm.write(f"  Fold {fold_idx+1}/{len(cat_ids)} — Hold-out: {fold_cat}")
+        tqdm.write(f"{'='*60}")
 
         fold_result = train_fold(fold_cat, records, vit_ckpt, output_dir, args)
         all_fold_results.append(fold_result)
@@ -277,7 +310,7 @@ def main():
 
         # Print fold predictions
         for pred in fold_result["predictions"]:
-            print(f"  {pred['Animal_ID']}-{pred['view']}: "
+            tqdm.write(f"  {pred['Animal_ID']}-{pred['view']}: "
                   f"actual={pred['BCS_actual']:.1f}, predicted={pred['BCS_predicted']:.2f}")
 
     elapsed = time.time() - t0
@@ -300,6 +333,7 @@ def main():
     # ── 5. Save results ──────────────────────────────────────────────
     results = {
         "config": {
+            "species": args.species,
             "max_epochs": args.max_epochs,
             "batch_size": args.batch_size,
             "lr": args.lr,

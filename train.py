@@ -36,6 +36,8 @@ from bcs_pipeline.data.stanford_segmentation_datamodule import StanfordSegmentat
 from bcs_pipeline.data.oxford_classification_datamodule import OxfordClassificationDataModule
 from bcs_pipeline.data.oxford_segmentation_datamodule import OxfordSegmentationDataModule
 from bcs_pipeline.data.combined_classification_datamodule import CombinedDogsCatsDataModule
+from bcs_pipeline.data.species_classification_datamodule import SpeciesClassificationDataModule
+from bcs_pipeline.data.cat_breed_classification_datamodule import CatBreedClassificationDataModule
 from bcs_pipeline.lightning_module.classification_module import LitClassificationModule
 from bcs_pipeline.lightning_module.segmentation_module import LitSegmentationModule
 from bcs_pipeline.trainer_factory import build_trainer, get_checkpoint_callback
@@ -142,8 +144,15 @@ def train(cfg: DictConfig) -> float:
                 val_split=cfg.get("val_split", 0.1),
                 seed=cfg.seed,
             )
-        elif dataset == "combined":
-            data_module = CombinedDogsCatsDataModule(
+        elif dataset in ("combined", "species", "cat_breed"):
+            # All three share the combined dataset's constructor; only the
+            # label mapping differs (full 132 breeds / binary species / 12 cats).
+            datamodule_cls = {
+                "combined": CombinedDogsCatsDataModule,
+                "species": SpeciesClassificationDataModule,
+                "cat_breed": CatBreedClassificationDataModule,
+            }[dataset]
+            data_module = datamodule_cls(
                 stanford_data_dir=cfg.get("stanford_data_dir", "data/stanford_dogs"),
                 oxford_data_dir=cfg.get("oxford_data_dir", "data/Oxford-IIIT_pet_dataset"),
                 batch_size=cfg.batch_size,

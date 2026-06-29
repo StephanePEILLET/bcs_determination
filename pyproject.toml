@@ -37,6 +37,11 @@ dependencies = [
     "opencv-contrib-python<4.12",
     "scikit-learn>=1.1",
     "scikit-image>=0.22",
+    # BCS regression training (scripts/train_bcs_regression.py) reads the
+    # Cats_OGR_dataset annotations from an .xlsx file; pandas needs openpyxl
+    # as the Excel engine.
+    "pandas>=2.0",
+    "openpyxl>=3.1",
     # Web app + persistence (FastAPI lifespan)
     "fastapi>=0.100",
     "uvicorn>=0.23",

@@ -131,9 +131,9 @@ class LitClassificationModule(LightningModule):
         self.val_acc = MulticlassAccuracy(num_classes=num_classes, average="micro")
         self.test_acc = MulticlassAccuracy(num_classes=num_classes, average="micro")
 
-        self.train_acc_top5 = MulticlassAccuracy(num_classes=num_classes, top_k=5, average="micro")
-        self.val_acc_top5 = MulticlassAccuracy(num_classes=num_classes, top_k=5, average="micro")
-        self.test_acc_top5 = MulticlassAccuracy(num_classes=num_classes, top_k=5, average="micro")
+        self.train_acc_top5 = MulticlassAccuracy(num_classes=num_classes, top_k=min(5, num_classes), average="micro")
+        self.val_acc_top5 = MulticlassAccuracy(num_classes=num_classes, top_k=min(5, num_classes), average="micro")
+        self.test_acc_top5 = MulticlassAccuracy(num_classes=num_classes, top_k=min(5, num_classes), average="micro")
 
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()

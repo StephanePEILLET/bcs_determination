@@ -61,9 +61,9 @@ class BCSConfig(BaseModel):
         default="classification",
         description="Task to perform (classification or segmentation)"
     )
-    dataset: Literal["stanford", "oxford", "combined"] = Field(
+    dataset: Literal["stanford", "oxford", "combined", "species", "cat_breed"] = Field(
         default="stanford",
-        description="Dataset to use (stanford, oxford, or combined dogs+cats)"
+        description="Dataset to use (stanford, oxford, combined dogs+cats, species, or cat_breed)"
     )
     model_name: Literal["resnet50", "vit", "deeplabv3_resnet50"] = Field(
         default="resnet50",

@@ -44,6 +44,10 @@ def build_checkpoint_callback(
     callback = pl.callbacks.ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename="epoch={epoch:02d}-val_acc={val/acc:.2f}-{step}",
+        # Without this, Lightning prepends the metric key to every token
+        # (giving "epoch=epoch=") and the "/" in "val/acc" becomes a path
+        # separator, scattering checkpoints into nested sub-directories.
+        auto_insert_metric_name=False,
         monitor=monitor,
         mode=mode,
         save_top_k=save_top_k,
@@ -162,6 +166,9 @@ def build_callbacks(cfg: DictConfig, checkpoint_dir: Path) -> List[pl.callbacks.
     checkpoint_cb = pl.callbacks.ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename=filename_pattern,
+        # See build_checkpoint_callback: avoids "epoch=epoch=" duplication and
+        # the "/" in "val/acc"/"val/iou" being turned into a sub-directory.
+        auto_insert_metric_name=False,
         monitor=monitor_metric,
         mode=mode,
         save_top_k=3,
