@@ -7,7 +7,7 @@ pipelines and formatting the result dict — used by both ``app.py`` and
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -16,6 +16,7 @@ from bcs_pipeline.inference import (
     predict_pose,
     predict_segmentation_with,
     predict_single,
+    predict_species,
 )
 
 
@@ -30,10 +31,48 @@ def run_core_inference(
     sam3_mode: str = "pose_concept_prompted",
     top_k: int = 5,
     conf_threshold: float = 0.25,
+    species_model=None,
+    dog_breed: Optional[Tuple[Any, list]] = None,
+    cat_breed: Optional[Tuple[Any, list]] = None,
 ) -> tuple:
+    """Run the cascade: species → breed (routed) → pose? → segmentation.
+
+    Parameters
+    ----------
+    cls_model, class_names :
+        Fallback (combined) breed classifier, used when no species-specific
+        breed model is available for the predicted species.
+    species_model :
+        Optional binary dog/cat classifier (cascade stage 1). When provided, its
+        prediction routes the breed classifier (and, downstream, the BCS model).
+    dog_breed, cat_breed :
+        Optional ``(model, class_names)`` tuples for the dedicated dog-only and
+        cat-only breed classifiers.
+
+    Returns ``(cls, seg, pose, species)`` where ``species`` is the species dict
+    (``{"species", "confidence", ...}``) or ``None`` when no species model ran.
+    """
     img = img.convert("RGB")
 
-    cls = predict_single(cls_model, img, class_names=class_names, top_k=top_k)
+    # ── Stage 1: species (optional) ──────────────────────────────────
+    species = predict_species(species_model, img) if species_model is not None else None
+
+    # ── Stage 2: breed, routed by species when a dedicated model exists ──
+    routed = None
+    if species is not None:
+        if species["species"] == "dog" and dog_breed is not None:
+            routed = dog_breed
+        elif species["species"] == "cat" and cat_breed is not None:
+            routed = cat_breed
+
+    if routed is not None:
+        breed_model, breed_names = routed
+        cls = predict_single(breed_model, img, class_names=breed_names, top_k=top_k)
+    else:
+        cls = predict_single(cls_model, img, class_names=class_names, top_k=top_k)
+
+    if species is not None:
+        cls["species"] = species["species"]
 
     needs_pose_first = (
         (seg_backend == "sam2" and sam2_mode == "pose_prompted")
@@ -55,7 +94,8 @@ def run_core_inference(
     if pose is None:
         pose = predict_pose(pose_model, img, conf_threshold=conf_threshold)
 
-    return cls, seg, pose
+    return cls, seg, pose, species
+
 
 
 def format_inference_result(
@@ -65,6 +105,8 @@ def format_inference_result(
     image_name: str,
     image_size: tuple,
     seg_backend: str = "deeplab",
+    bcs: Optional[Dict[str, Any]] = None,
+    species: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     mask = seg["mask"]
     unique, counts = np.unique(mask, return_counts=True)
@@ -74,8 +116,18 @@ def format_inference_result(
     ]
 
     return {
+        "bcs": bcs,
+        "species": (
+            {
+                "species": species.get("species"),
+                "confidence": round(species.get("confidence", 0.0) * 100, 2),
+            }
+            if species
+            else None
+        ),
         "classification": {
             "class_name": cls.get("class_name"),
+            "species": cls.get("species"),
             "confidence": round(cls.get("confidence", 0.0) * 100, 2),
             "top_k": [
                 {

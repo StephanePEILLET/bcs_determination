@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -156,12 +156,25 @@ def _format_classification_label(classification: Dict) -> str:
     return f"{name} ({conf * 100:.1f}%)"
 
 
+def _format_banner_label(
+    classification: Optional[Dict] = None, bcs: Optional[Dict] = None
+) -> str:
+    """Build the top-banner text from the available branches."""
+    parts: List[str] = []
+    if classification is not None:
+        parts.append(_format_classification_label(classification))
+    if bcs is not None and bcs.get("bcs") is not None:
+        parts.append(f"BCS {bcs['bcs']:.1f}/9 — {bcs.get('category', '')}".rstrip(" —"))
+    return "  |  ".join(parts)
+
+
 def render_combined(
     image: Image.Image,
     *,
     classification: Optional[Dict] = None,
     segmentation: Optional[Dict] = None,
     pose: Optional[Dict] = None,
+    bcs: Optional[Dict] = None,
     seg_alpha: float = 0.4,
     show_segmentation: bool = True,
     show_boxes: bool = True,
@@ -190,8 +203,10 @@ def render_combined(
             show_keypoints=show_keypoints,
         )
 
-    if classification is not None and show_label:
-        canvas = draw_label_banner(canvas, _format_classification_label(classification))
+    if show_label and (classification is not None or bcs is not None):
+        label = _format_banner_label(classification, bcs)
+        if label:
+            canvas = draw_label_banner(canvas, label)
 
     return canvas
 

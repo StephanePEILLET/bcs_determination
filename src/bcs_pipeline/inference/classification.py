@@ -144,6 +144,18 @@ def load_combined_class_names(
     return list(dogs) + list(cats)
 
 
+# Cascade-pipeline aliases: the dog branch reads breed names from the Stanford
+# ``Images/`` tree, the cat branch from the Oxford ``list.txt`` (species==1).
+def load_dog_class_names(stanford_data_dir: str) -> Optional[List[str]]:
+    """Return the 120 Stanford dog breed names (cascade dog branch)."""
+    return load_class_names(stanford_data_dir)
+
+
+def load_cat_class_names(oxford_data_dir: str) -> Optional[List[str]]:
+    """Return the 12 Oxford-IIIT cat breed names (cascade cat branch)."""
+    return load_oxford_cat_class_names(oxford_data_dir)
+
+
 def get_inference_transform(image_size: int = 224) -> transforms.Compose:
     """Return the deterministic transform used at validation / inference."""
     return transforms.Compose([

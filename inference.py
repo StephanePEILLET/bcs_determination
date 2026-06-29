@@ -5,9 +5,10 @@ Two modes:
 
 * ``--mode classify`` (default, legacy): loads a classification checkpoint and
   prints the top-k predicted breeds.
-* ``--mode full``: runs whichever of the three pipelines (classification,
-  segmentation, pose) have a checkpoint provided, then composes a single PNG
-  with the overlays.
+* ``--mode full``: runs whichever pipelines (classification, segmentation,
+  pose, BCS regression) have a checkpoint provided, then composes a single PNG
+  with the overlays. The BCS branch consumes the segmentation mask to isolate
+  the silhouette before scoring.
 
 Heavy logic lives in ``bcs_pipeline.inference`` so that ``app.py`` and the
 notebooks can reuse the same code.
@@ -79,6 +80,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pose_checkpoint", type=str, default=None,
         help="Pose detection (Ultralytics YOLO) weights (.pt). Optional.",
+    )
+    parser.add_argument(
+        "--bcs_checkpoint", type=str, default=None,
+        help="BCS regression checkpoint directory (e.g. checkpoints/bcs_regression, "
+             "containing fold_*/best.ckpt, or with cat/ and dog/ sub-folders) or a "
+             "single .ckpt. Optional; uses the segmentation mask when "
+             "--seg_checkpoint is also provided, and routes to the dog/cat model "
+             "by predicted species when --species_checkpoint is given.",
+    )
+    parser.add_argument(
+        "--species_checkpoint", type=str, default=None,
+        help="Binary dog/cat species classifier (.ckpt). Cascade stage 1: routes "
+             "the breed classifier and BCS model. Optional.",
+    )
+    parser.add_argument(
+        "--dog_breed_checkpoint", type=str, default=None,
+        help="Dog-only breed classifier (.ckpt, 120 classes). Used when species=dog.",
+    )
+    parser.add_argument(
+        "--cat_breed_checkpoint", type=str, default=None,
+        help="Cat-only breed classifier (.ckpt, 12 classes). Used when species=cat.",
+    )
+    parser.add_argument(
+        "--stanford_data_dir", type=str, default="data/Stanford_dogs",
+        help="Stanford Dogs root (for dog breed class names).",
+    )
+    parser.add_argument(
+        "--oxford_data_dir", type=str, default="data/Oxford-IIIT_pet_dataset",
+        help="Oxford-IIIT root (for cat breed class names).",
     )
     parser.add_argument(
         "--output", type=str, default=None,
@@ -167,9 +197,14 @@ def _print_full_summary(result: dict) -> None:
     cls = result.get("classification")
     seg = result.get("segmentation")
     pose = result.get("pose")
+    bcs = result.get("bcs")
+    species = result.get("species")
     out = result.get("output_path")
 
     print(f"\n{'─' * 50}")
+    if species:
+        print(f"  Species     : {species['species']} "
+              f"({species['confidence'] * 100:.2f}%)")
     if cls:
         label = cls["class_name"] or f"Class ID {cls['class_id']}"
         print(f"  Breed       : {label} ({cls['confidence'] * 100:.2f}%)")
@@ -191,6 +226,18 @@ def _print_full_summary(result: dict) -> None:
     else:
         print("  Pose        : (not run)")
 
+    if bcs and bcs.get("bcs") is not None:
+        masked = "masked" if bcs.get("masked") else "unmasked"
+        model_species = bcs.get("model_species")
+        suffix = f", model={model_species}" if model_species else ""
+        print(f"  BCS         : {bcs['bcs']:.2f}/9 — {bcs['category']} "
+              f"(±{bcs['std']:.2f}, {bcs['num_folds']} folds, {masked}{suffix})")
+    elif bcs and bcs.get("unavailable_for"):
+        print(f"  BCS         : unavailable for {bcs['unavailable_for']} "
+              f"(no model trained yet)")
+    else:
+        print("  BCS         : (not run)")
+
     if out:
         print(f"  Output PNG  : {out}")
     if result.get("coco_path"):
@@ -202,15 +249,25 @@ def main() -> None:
     args = parse_args()
 
     if args.mode == "full":
-        if not (args.checkpoint_path or args.seg_checkpoint or args.pose_checkpoint):
+        if not (args.checkpoint_path or args.seg_checkpoint or args.pose_checkpoint
+                or args.bcs_checkpoint or args.species_checkpoint
+                or args.dog_breed_checkpoint or args.cat_breed_checkpoint):
             sys.exit("Error: --mode full requires at least one of "
-                     "--checkpoint_path, --seg_checkpoint, --pose_checkpoint.")
+                     "--checkpoint_path, --seg_checkpoint, --pose_checkpoint, "
+                     "--bcs_checkpoint, --species_checkpoint, "
+                     "--dog_breed_checkpoint, --cat_breed_checkpoint.")
         print(f"Processing image {args.image_path}…")
         result = run_full_inference(
             image=args.image_path,
             classification_ckpt=args.checkpoint_path or None,
             segmentation_ckpt=args.seg_checkpoint or None,
             pose_ckpt=args.pose_checkpoint or None,
+            bcs_ckpt=args.bcs_checkpoint or None,
+            species_ckpt=args.species_checkpoint or None,
+            dog_breed_ckpt=args.dog_breed_checkpoint or None,
+            cat_breed_ckpt=args.cat_breed_checkpoint or None,
+            stanford_data_dir=args.stanford_data_dir or None,
+            oxford_data_dir=args.oxford_data_dir or None,
             output_path=args.output or None,
             classification_model_name=args.model_name,
             classification_num_classes=args.num_classes,

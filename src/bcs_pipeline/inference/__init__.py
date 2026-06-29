@@ -14,6 +14,8 @@ from bcs_pipeline.inference.classification import (
     load_class_names,
     load_classification_model,
     load_combined_class_names,
+    load_dog_class_names,
+    load_cat_class_names,
     load_oxford_cat_class_names,
     predict_batch,
     predict_single,
@@ -47,6 +49,18 @@ from bcs_pipeline.inference.pose import (
     load_pose_model,
     predict_pose,
 )
+from bcs_pipeline.inference.bcs import (
+    bcs_category,
+    get_bcs_transform,
+    load_bcs_model,
+    load_bcs_models,
+    predict_bcs,
+)
+from bcs_pipeline.inference.species import (
+    SPECIES_CLASS_NAMES,
+    load_species_model,
+    predict_species,
+)
 from bcs_pipeline.inference.visualization import (
     DEFAULT_OVERLAY_COLORS,
     draw_label_banner,
@@ -71,6 +85,8 @@ __all__ = [
     "load_class_names",
     "load_combined_class_names",
     "load_oxford_cat_class_names",
+    "load_dog_class_names",
+    "load_cat_class_names",
     "get_inference_transform",
     "predict_single",
     "predict_batch",
@@ -98,6 +114,16 @@ __all__ = [
     # pose
     "load_pose_model",
     "predict_pose",
+    # bcs regression
+    "load_bcs_model",
+    "load_bcs_models",
+    "predict_bcs",
+    "get_bcs_transform",
+    "bcs_category",
+    # species (cascade stage 1)
+    "load_species_model",
+    "predict_species",
+    "SPECIES_CLASS_NAMES",
     # visualization
     "overlay_segmentation",
     "draw_pose",
