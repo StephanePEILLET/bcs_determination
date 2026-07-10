@@ -13,13 +13,13 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` fait
 Pas d'embedding de race : la race agit via le routage par espèce.
 
 ## Tableau des entraînements
-| Modèle        | Commande                                                        | Lancé | Abouti | Ckpt récupéré | Chemin                                   | Métrique | Date |
-|---------------|-----------------------------------------------------------------|-------|--------|---------------|------------------------------------------|----------|------|
-| species       | `python train.py --config-name config_species`                  | non   | non    | non           | checkpoints/classification/species/      | —        | —    |
-| dog_breed     | `python train.py --config-name config_dog_breed`                | non   | non    | non           | checkpoints/classification/dog_breed/    | —        | —    |
-| cat_breed     | `python train.py --config-name config_cat_breed`                | non   | non    | non           | checkpoints/classification/cat_breed/    | —        | —    |
-| bcs_cat       | `python scripts/train_bcs_regression.py --species cat`          | non   | non    | non           | checkpoints/bcs_regression/cat/fold_*/   | —        | —    |
-| bcs_dog       | (placeholder — en attente de données chien)                     | n/a   | n/a    | n/a           | checkpoints/bcs_regression/dog/          | —        | —    |
+| Modèle        | Commande                                                        | Lancé | Abouti | Ckpt récupéré | Chemin                                   | Métrique          | Date       |
+|---------------|-----------------------------------------------------------------|-------|--------|---------------|------------------------------------------|-------------------|------------|
+| species       | `python train.py --config-name config_species`                  | oui   | oui    | oui           | checkpoints/classification/species/      | val/acc=1.00      | 2026-06-29 |
+| dog_breed     | `python train.py --config-name config_dog_breed`                | oui   | oui    | oui           | checkpoints/classification/dog_breed/    | val/acc=0.89      | 2026-06-29 |
+| cat_breed     | `python train.py --config-name config_cat_breed`                | oui   | oui    | oui           | checkpoints/classification/cat_breed/    | val/acc=0.95      | 2026-06-29 |
+| bcs_cat       | `python scripts/train_bcs_regression.py --species cat`          | oui   | oui    | oui           | checkpoints/bcs_regression/cat/fold_*/   | MAE=0.821 RMSE=0.923 | 2026-06-29 |
+| bcs_dog       | (placeholder — en attente de données chien)                     | n/a   | n/a    | n/a           | checkpoints/bcs_regression/dog/          | —                 | —          |
 
 ## Phase 0 — Fichier de suivi
 - [x] Créer ce fichier `docs/BCS_CASCADE_PROGRESS.md`
@@ -29,20 +29,20 @@ Pas d'embedding de race : la race agit via le routage par espèce.
 - [x] `configs/config_species.yaml` (num_classes=2)
 - [x] `train.py` : branche `dataset == "species"`
 - [x] `src/bcs_pipeline/inference/species.py` : `load_species_model()`, `predict_species()`
-- [ ] Entraînement species lancé puis abouti (maj tableau)
+- [x] Entraînement species lancé puis abouti (val/acc=1.00, 2026-06-29)
 
 ## Phase 2 — Deux classifieurs de race
 - [x] `configs/config_dog_breed.yaml` (Stanford 120, datamodule existant)
 - [x] `configs/config_cat_breed.yaml` (Oxford 12 chats) + `cat_breed_classification_datamodule.py` + branche train.py
 - [x] Loaders noms de classes par espèce (`classification.py`)
-- [ ] Entraînement dog_breed lancé puis abouti
-- [ ] Entraînement cat_breed lancé puis abouti
+- [x] Entraînement dog_breed lancé puis abouti (val/acc=0.89, 2026-06-29)
+- [x] Entraînement cat_breed lancé puis abouti (val/acc=0.95, 2026-06-29)
 
 ## Phase 3 — BCS par espèce
 - [x] `bcs.py` : `load_bcs_models()` registry {cat, dog}
 - [x] `scripts/train_bcs_regression.py` : arg `--species` + `--data-dir`
 - [x] Réorg checkpoints `bcs_regression/{cat,dog}/` (+ rétrocompat)
-- [ ] Entraînement bcs_cat lancé puis abouti
+- [x] Entraînement bcs_cat lancé puis abouti (LOCO-CV 11 folds, MAE=0.821 RMSE=0.923, 2026-06-29)
 
 ## Phase 4 — Câblage cascade
 - [x] `app_checkpoints.py` : nouveaux répertoires + fns de disponibilité
@@ -67,8 +67,17 @@ Pas d'embedding de race : la race agit via le routage par espèce.
 - Réentraînement segmentation / pose.
 
 ## Notes / blocages
-- Tout le code de la cascade est en place (Phases 1–5). Reste UNIQUEMENT les
-  entraînements via `bash scripts/run_cascade_trainings.sh` (env conda bcs_analysis, py3.10).
+- **2026-06-29 : cascade complète et entraînée.** Les 4 modèles (species, dog_breed,
+  cat_breed, bcs_cat) ont abouti et leurs checkpoints sont en place (voir tableau).
+  Reste uniquement `bcs_dog`, bloqué en attente des données chien (hors scope).
+- Le run `run_cascade_trainings.sh` a d'abord échoué sur `bcs_cat` faute du module
+  `openpyxl` (moteur Excel de pandas pour lire le .xlsx OGR) → dépendance ajoutée
+  dans `pyproject.toml` ; rerun OK.
+- Checkpoints à plat legacy `checkpoints/bcs_regression/fold_OGR_*` (run mono-modèle
+  du 2026-05-31, ~7 Go) rendus redondants par `bcs_regression/cat/fold_*`. Déplacés
+  le 2026-07-10 vers `checkpoints/_trash_legacy_flat_bcs/` (corbeille locale) après
+  vérification que `bcs_available('cat')` reste True. À vider quand tu veux :
+  `rm -rf checkpoints/_trash_legacy_flat_bcs`.
 - Bugs corrigés au 1er test : (1) config_validation.py `dataset` accepte désormais
   species/cat_breed ; (2) classification_module.py top_k=min(5,num_classes) (species=2 classes).
 - Test OK : species ~99% val/acc, cat_breed ~69%, bcs_cat LOCO 11 folds tourne (SAM3 + tqdm).
