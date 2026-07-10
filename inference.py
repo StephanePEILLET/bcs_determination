@@ -90,6 +90,14 @@ def parse_args() -> argparse.Namespace:
              "by predicted species when --species_checkpoint is given.",
     )
     parser.add_argument(
+        "--sex", type=str, default=None, choices=["M", "F"],
+        help="Animal sex metadata fed to a covariate-conditioned BCS model. Optional.",
+    )
+    parser.add_argument(
+        "--long_coat", type=str, default=None, choices=["Y", "N"],
+        help="Long-coat metadata (Y/N) fed to a covariate-conditioned BCS model. Optional.",
+    )
+    parser.add_argument(
         "--species_checkpoint", type=str, default=None,
         help="Binary dog/cat species classifier (.ckpt). Cascade stage 1: routes "
              "the breed classifier and BCS model. Optional.",
@@ -230,6 +238,11 @@ def _print_full_summary(result: dict) -> None:
         masked = "masked" if bcs.get("masked") else "unmasked"
         model_species = bcs.get("model_species")
         suffix = f", model={model_species}" if model_species else ""
+        if bcs.get("task") == "classification" and bcs.get("confidence") is not None:
+            suffix += f", conf={bcs['confidence'] * 100:.0f}%"
+        cov = bcs.get("covariates_used")
+        if cov:
+            suffix += f", meta={','.join(sorted(cov))}"
         print(f"  BCS         : {bcs['bcs']:.2f}/9 — {bcs['category']} "
               f"(±{bcs['std']:.2f}, {bcs['num_folds']} folds, {masked}{suffix})")
     elif bcs and bcs.get("unavailable_for"):
@@ -263,6 +276,8 @@ def main() -> None:
             segmentation_ckpt=args.seg_checkpoint or None,
             pose_ckpt=args.pose_checkpoint or None,
             bcs_ckpt=args.bcs_checkpoint or None,
+            bcs_sex=args.sex or None,
+            bcs_long_coat=args.long_coat or None,
             species_ckpt=args.species_checkpoint or None,
             dog_breed_ckpt=args.dog_breed_checkpoint or None,
             cat_breed_ckpt=args.cat_breed_checkpoint or None,

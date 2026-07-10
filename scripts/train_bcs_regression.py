@@ -30,21 +30,27 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import torch
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+import torch
 from PIL import Image
 from pillow_heif import register_heif_opener
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from tqdm.auto import tqdm
 
 # ── Make the ``src/`` package importable ─────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from bcs_pipeline.inference import load_segmentation_backend, predict_segmentation_with
-from bcs_pipeline.app_checkpoints import SAM3_CKPT, SAM3_BPE, resolve_classifier_ckpt
-from bcs_pipeline.lightning_module.bcs_regression_module import LitBCSRegression
+from bcs_pipeline.app_checkpoints import SAM3_BPE, SAM3_CKPT, resolve_classifier_ckpt
 from bcs_pipeline.data.bcs_datamodule import BCSDataModule
+from bcs_pipeline.inference import load_segmentation_backend, predict_segmentation_with
+from bcs_pipeline.lightning_module.bcs_classification_module import (
+    BCS_COVARIATE_NAMES,
+    LitBCSClassification,
+    covariates_to_vector,
+    encode_bcs_covariates,
+)
+from bcs_pipeline.lightning_module.bcs_regression_module import LitBCSRegression
 
 register_heif_opener()
 
@@ -57,6 +63,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hidden-dim", type=int, default=128, help="MLP hidden dimension")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate in head")
     parser.add_argument("--patience", type=int, default=20, help="Early stopping patience (0=disabled)")
+    parser.add_argument("--task", type=str, default="classification",
+                        choices=["classification", "regression"],
+                        help="Prediction head: 'classification' (ordinal over the discrete "
+                             "BCS scores present, default) or legacy 'regression'.")
+    parser.add_argument("--covariates", action=argparse.BooleanOptionalAction, default=True,
+                        help="Condition the classification head on per-animal metadata "
+                             "(sex + long-coat). Use --no-covariates to disable. "
+                             "Ignored for --task regression.")
     parser.add_argument("--species", type=str, default="cat", choices=["cat", "dog"],
                         help="Which species BCS model to train. 'dog' is a placeholder "
                              "until a dog BCS dataset is provided.")
@@ -94,6 +108,10 @@ def load_dataset(data_dir: Path) -> pd.DataFrame:
                 "view": view,
                 "path": str(candidates[0]),
                 "BCS": float(r["BCS"]),
+                # Per-animal metadata (covariates). Kept raw here; encoded into
+                # the numeric ``cov`` vector later when covariate conditioning is on.
+                "Sex": (None if pd.isna(r.get("Sex")) else str(r.get("Sex"))),
+                "Long_Coat_YN": (None if pd.isna(r.get("Long_Coat_YN")) else r.get("Long_Coat_YN")),
             })
     return pd.DataFrame(rows)
 
@@ -124,12 +142,26 @@ def compute_masks(records: list, device: torch.device, sam3_mode: str) -> list:
     return masks
 
 
+def _class_weights_and_prior(train_bcs: list, bcs_classes: list):
+    """Inverse-frequency class weights + log-prior for the head warm-start."""
+    counts = np.array([sum(1 for b in train_bcs if b == c) for c in bcs_classes], dtype=float)
+    # Avoid div-by-zero if a class is absent from this fold's train split.
+    freq = np.where(counts > 0, counts, 1.0) / max(len(train_bcs), 1)
+    weights = (1.0 / freq)
+    weights = weights / weights.mean()  # normalise around 1
+    prior = counts / counts.sum() if counts.sum() > 0 else np.ones_like(counts) / len(counts)
+    log_prior = np.log(np.clip(prior, 1e-6, None))
+    return weights.tolist(), log_prior.tolist()
+
+
 def train_fold(
     fold_cat: str,
     records: list,
     vit_ckpt: str,
     output_dir: Path,
     args: argparse.Namespace,
+    bcs_classes: list,
+    covariate_names: list,
 ) -> dict:
     """Train a single LOCO fold and return predictions."""
     fold_dir = output_dir / f"fold_{fold_cat}"
@@ -144,27 +176,44 @@ def train_fold(
         num_workers=args.num_workers,
     )
 
-    # Warm-start the head's output bias at the training-set BCS mean so the
-    # model starts by predicting the average and only learns residuals.
     train_bcs = [r["BCS"] for r in records if r["Animal_ID"] != fold_cat]
-    target_mean = float(np.mean(train_bcs))
 
-    # Model
-    model = LitBCSRegression(
-        backbone_ckpt=vit_ckpt,
-        model_name="vit",
-        num_classes=132,
-        embedding_dim=768,
-        hidden_dim=args.hidden_dim,
-        dropout=args.dropout,
-        lr=args.lr,
-        weight_decay=1e-4,
-        target_mean=target_mean,
-    )
+    # Model — classification (default) or legacy regression.
+    if args.task == "classification":
+        class_weights, log_prior = _class_weights_and_prior(train_bcs, bcs_classes)
+        model = LitBCSClassification(
+            bcs_classes=bcs_classes,
+            backbone_ckpt=vit_ckpt,
+            model_name="vit",
+            num_classes=132,
+            embedding_dim=768,
+            hidden_dim=args.hidden_dim,
+            dropout=args.dropout,
+            lr=args.lr,
+            weight_decay=1e-4,
+            class_weights=class_weights,
+            class_log_prior=log_prior,
+            covariate_names=covariate_names,
+        )
+    else:
+        # Warm-start the head's output bias at the training-set BCS mean so the
+        # model starts by predicting the average and only learns residuals.
+        target_mean = float(np.mean(train_bcs))
+        model = LitBCSRegression(
+            backbone_ckpt=vit_ckpt,
+            model_name="vit",
+            num_classes=132,
+            embedding_dim=768,
+            hidden_dim=args.hidden_dim,
+            dropout=args.dropout,
+            lr=args.lr,
+            weight_decay=1e-4,
+            target_mean=target_mean,
+        )
 
     # Callbacks
-    # Note: val set is only 2 images of the SAME cat (same BCS), so val/mae
-    # is a poor signal for model selection. Monitor train/loss instead.
+    # Note: val set is only 2 images of the SAME cat (same BCS), so val metrics
+    # are a poor signal for model selection. Monitor train/loss instead.
     callbacks = [
         ModelCheckpoint(
             dirpath=str(fold_dir),
@@ -194,13 +243,20 @@ def train_fold(
     trainer.fit(model, dm)
 
     # Load best checkpoint for inference
+    ModelCls = LitBCSClassification if args.task == "classification" else LitBCSRegression
     best_ckpt = fold_dir / "best.ckpt"
     if best_ckpt.exists():
-        model = LitBCSRegression.load_from_checkpoint(
+        extra = (
+            {"bcs_classes": bcs_classes, "covariate_names": covariate_names}
+            if args.task == "classification"
+            else {}
+        )
+        model = ModelCls.load_from_checkpoint(
             str(best_ckpt),
             backbone_ckpt=vit_ckpt,
             model_name="vit",
             num_classes=132,
+            **extra,
         )
 
     # Predict on held-out cat
@@ -209,24 +265,41 @@ def train_fold(
     model.eval()
     dm.setup()
 
-    all_preds, all_actuals = [], []
-    with torch.no_grad():
-        for x, y in dm.val_dataloader():
-            x = x.float().to(device)
-            preds = model(x).float().cpu().numpy()
-            all_preds.extend(preds.tolist())
-            all_actuals.extend(y.numpy().tolist())
-
-    # Build result
     val_recs = [r for r in records if r["Animal_ID"] == fold_cat]
     fold_results = []
-    for i, rec in enumerate(val_recs):
-        fold_results.append({
-            "Animal_ID": rec["Animal_ID"],
-            "view": rec["view"],
-            "BCS_actual": all_actuals[i],
-            "BCS_predicted": all_preds[i],
-        })
+    with torch.no_grad():
+        idx = 0
+        for x, cov, y in dm.val_dataloader():
+            x = x.float().to(device)
+            cov = cov.float().to(device)
+            actuals = y.numpy().tolist()
+            if args.task == "classification":
+                logits = model(x, cov)
+                probs = torch.softmax(logits, dim=-1).cpu().numpy()
+                exp_scores = model.expected_score(logits).cpu().numpy()
+                for j in range(len(actuals)):
+                    top = int(probs[j].argmax())
+                    rec = val_recs[idx]
+                    fold_results.append({
+                        "Animal_ID": rec["Animal_ID"],
+                        "view": rec["view"],
+                        "BCS_actual": actuals[j],
+                        "BCS_predicted": float(exp_scores[j]),  # expected score
+                        "predicted_class": float(bcs_classes[top]),
+                        "confidence": float(probs[j][top]),
+                    })
+                    idx += 1
+            else:
+                preds = model(x).float().cpu().numpy().tolist()
+                for j in range(len(actuals)):
+                    rec = val_recs[idx]
+                    fold_results.append({
+                        "Animal_ID": rec["Animal_ID"],
+                        "view": rec["view"],
+                        "BCS_actual": actuals[j],
+                        "BCS_predicted": float(preds[j]),
+                    })
+                    idx += 1
 
     return {
         "fold_cat": fold_cat,
@@ -277,11 +350,40 @@ def main():
     print(f"\n{len(df_obs)} images, {df_obs['Animal_ID'].nunique()} animals, "
           f"BCS ∈ [{df_obs['BCS'].min()}, {df_obs['BCS'].max()}]")
 
+    # Discrete BCS scores present in the dataset — the classes the classification
+    # head predicts (ordered). Regression ignores this.
+    bcs_classes = sorted(float(v) for v in df_obs["BCS"].unique())
+    print(f"Task: {args.task} | BCS classes présentes: {bcs_classes}")
+
+    # Covariate (metadata) conditioning: only for classification, when enabled,
+    # and only if the metadata actually varies (a constant covariate carries no
+    # signal, so we drop it and report why).
+    covariate_names: list = []
+    if args.task == "classification" and args.covariates:
+        varies = {
+            "sex": df_obs["Sex"].nunique(dropna=True) > 1,
+            "long_coat": df_obs["Long_Coat_YN"].nunique(dropna=True) > 1,
+        }
+        if varies["sex"] or varies["long_coat"]:
+            covariate_names = list(BCS_COVARIATE_NAMES)
+            print(f"Covariables (metadata) activées: {covariate_names} | varie: {varies}")
+            print("  ⚠ 11 chats : tout gain mesuré est probablement de l'overfitting.")
+        else:
+            print("Covariables demandées mais toutes constantes → désactivées (aucun signal).")
+
     # ── 2. Pre-compute SAM3 masks ────────────────────────────────────
     records = df_obs.to_dict("records")
     masks = compute_masks(records, device, args.sam3_mode)
     for rec, mask in zip(records, masks):
         rec["mask"] = mask
+    # Encode per-animal metadata into the numeric ``cov`` vector each record
+    # carries into the datamodule (empty when covariates are off).
+    for rec in records:
+        if covariate_names:
+            enc = encode_bcs_covariates(sex=rec.get("Sex"), long_coat=rec.get("Long_Coat_YN"))
+            rec["cov"] = covariates_to_vector(covariate_names, enc)
+        else:
+            rec["cov"] = []
 
     # ── 3. LOCO Cross-Validation ─────────────────────────────────────
     vit_ckpt = str(resolve_classifier_ckpt())
@@ -304,7 +406,7 @@ def main():
         tqdm.write(f"  Fold {fold_idx+1}/{len(cat_ids)} — Hold-out: {fold_cat}")
         tqdm.write(f"{'='*60}")
 
-        fold_result = train_fold(fold_cat, records, vit_ckpt, output_dir, args)
+        fold_result = train_fold(fold_cat, records, vit_ckpt, output_dir, args, bcs_classes, covariate_names)
         all_fold_results.append(fold_result)
         all_predictions.extend(fold_result["predictions"])
 
@@ -316,24 +418,62 @@ def main():
     elapsed = time.time() - t0
 
     # ── 4. Global metrics ─────────────────────────────────────────────
+    # On the expected/continuous score (comparable across tasks).
     actuals = np.array([p["BCS_actual"] for p in all_predictions])
     preds = np.array([p["BCS_predicted"] for p in all_predictions])
     mae = float(np.mean(np.abs(actuals - preds)))
     mse = float(np.mean((actuals - preds) ** 2))
     rmse = float(np.sqrt(mse))
 
+    metrics = {"mae": mae, "rmse": rmse, "mse": mse}
+
     print(f"\n{'='*60}")
-    print(f"  RÉSULTATS GLOBAUX (LOCO-CV)")
+    print(f"  RÉSULTATS GLOBAUX (LOCO-CV) — task={args.task}")
     print(f"{'='*60}")
-    print(f"  MAE  = {mae:.3f}")
-    print(f"  RMSE = {rmse:.3f}")
-    print(f"  MSE  = {mse:.3f}")
+
+    if args.task == "classification":
+        # Honest evaluation: accuracy + confusion matrix + reference baselines.
+        pred_cls = np.array([p["predicted_class"] for p in all_predictions])
+        accuracy = float(np.mean(pred_cls == actuals))
+        cls_arr = np.array(bcs_classes)
+        confusion = np.zeros((len(bcs_classes), len(bcs_classes)), dtype=int)
+        for a, pcl in zip(actuals, pred_cls):
+            confusion[int(np.argmin(np.abs(cls_arr - a)))][int(np.argmin(np.abs(cls_arr - pcl)))] += 1
+
+        # Baselines: majority class accuracy, and mean-predictor MAE.
+        vals, counts = np.unique(actuals, return_counts=True)
+        baseline_majority_accuracy = float(counts.max() / counts.sum())
+        baseline_mean_mae = float(np.mean(np.abs(actuals - actuals.mean())))
+
+        metrics.update({
+            "accuracy": accuracy,
+            "mae_expected": mae,
+            "confusion_matrix": confusion.tolist(),
+            "confusion_labels": bcs_classes,
+            "baseline_majority_accuracy": baseline_majority_accuracy,
+            "baseline_mean_mae": baseline_mean_mae,
+        })
+        print(f"  Accuracy         = {accuracy:.3f}  (baseline majorité = {baseline_majority_accuracy:.3f})")
+        print(f"  MAE (attendu)    = {mae:.3f}  (baseline moyenne = {baseline_mean_mae:.3f})")
+        print(f"  RMSE             = {rmse:.3f}")
+        print(f"  Classes          = {bcs_classes}")
+        print(f"  Matrice confusion (lignes=réel, cols=prédit):\n{confusion}")
+        beats = "✓" if accuracy >= baseline_majority_accuracy else "✗"
+        print(f"  {beats} bat la baseline majorité : {accuracy:.3f} vs {baseline_majority_accuracy:.3f}")
+    else:
+        print(f"  MAE  = {mae:.3f}")
+        print(f"  RMSE = {rmse:.3f}")
+        print(f"  MSE  = {mse:.3f}")
+
     print(f"  Temps total : {elapsed:.1f}s")
 
     # ── 5. Save results ──────────────────────────────────────────────
     results = {
         "config": {
             "species": args.species,
+            "task": args.task,
+            "bcs_classes": bcs_classes,
+            "covariate_names": covariate_names,
             "max_epochs": args.max_epochs,
             "batch_size": args.batch_size,
             "lr": args.lr,
@@ -344,11 +484,7 @@ def main():
             "seed": args.seed,
             "backbone_ckpt": vit_ckpt,
         },
-        "metrics": {
-            "mae": mae,
-            "rmse": rmse,
-            "mse": mse,
-        },
+        "metrics": metrics,
         "folds": all_fold_results,
         "predictions": all_predictions,
         "elapsed_seconds": elapsed,

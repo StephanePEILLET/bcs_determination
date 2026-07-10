@@ -42,6 +42,8 @@ def run_full_inference(
     segmentation_ckpt: Optional[str] = None,
     pose_ckpt: Optional[str] = None,
     bcs_ckpt: Optional[Union[str, Path]] = None,
+    bcs_sex: Optional[str] = None,
+    bcs_long_coat: Optional[object] = None,
     species_ckpt: Optional[str] = None,
     species_model_name: str = "vit",
     dog_breed_ckpt: Optional[str] = None,
@@ -192,7 +194,10 @@ def run_full_inference(
             if bcs_handle is None and species_name is None:
                 bcs_handle = registry.get("cat")
             if bcs_handle is not None:
-                bcs_result = predict_bcs(bcs_handle, pil_image, mask=seg_mask, device=device)
+                bcs_result = predict_bcs(
+                    bcs_handle, pil_image, mask=seg_mask,
+                    sex=bcs_sex, long_coat=bcs_long_coat, device=device,
+                )
                 bcs_result["model_species"] = (
                     species_key if registry.get(species_key) else "cat"
                 )
@@ -200,7 +205,10 @@ def run_full_inference(
                 bcs_result = {"bcs": None, "category": None, "unavailable_for": "dog"}
         else:
             bcs_handle = load_bcs_model(bcs_ckpt, device=device)
-            bcs_result = predict_bcs(bcs_handle, pil_image, mask=seg_mask, device=device)
+            bcs_result = predict_bcs(
+                bcs_handle, pil_image, mask=seg_mask,
+                sex=bcs_sex, long_coat=bcs_long_coat, device=device,
+            )
 
 
     saved_path: Optional[str] = None

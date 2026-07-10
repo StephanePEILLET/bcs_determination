@@ -15,70 +15,14 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MeanAbsoluteError, MeanSquaredError
 
 
-class BCSRegressionHead(nn.Module):
-    """Small MLP: embedding_dim → hidden → 1 (BCS score)."""
+class _BCSBackboneMixin:
+    """Shared frozen-ViT backbone loading + CLS-token feature extraction.
 
-    def __init__(
-        self,
-        embedding_dim: int = 768,
-        hidden_dim: int = 128,
-        dropout: float = 0.3,
-        target_mean: float = 5.0,
-    ):
-        super().__init__()
-        self.head = nn.Sequential(
-            nn.LayerNorm(embedding_dim),
-            nn.Linear(embedding_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, 1),
-        )
-        # Warm-start the output layer: bias = target mean, weights = 0.
-        # The head therefore starts by predicting the dataset mean and only
-        # needs to learn residuals (avoids the LR collapsing before the bias
-        # has time to drift up from 0 to the BCS range).
-        final_linear = self.head[-1]
-        nn.init.zeros_(final_linear.weight)
-        nn.init.constant_(final_linear.bias, float(target_mean))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.head(x).squeeze(-1)  # (B,)
-
-
-class LitBCSRegression(LightningModule):
-    """Frozen ViT backbone + trainable regression head for BCS prediction."""
-
-    def __init__(
-        self,
-        backbone_ckpt: Optional[str] = None,
-        model_name: str = "vit",
-        num_classes: int = 132,
-        embedding_dim: int = 768,
-        hidden_dim: int = 128,
-        dropout: float = 0.3,
-        lr: float = 1e-3,
-        weight_decay: float = 1e-4,
-        target_mean: float = 5.0,
-    ):
-        super().__init__()
-        self.save_hyperparameters()
-
-        # Build and freeze ViT backbone
-        self.backbone = self._build_backbone(backbone_ckpt, model_name, num_classes)
-        for p in self.backbone.parameters():
-            p.requires_grad = False
-        self.backbone.eval()
-
-        # Trainable regression head
-        self.head = BCSRegressionHead(
-            embedding_dim, hidden_dim, dropout, target_mean=target_mean
-        )
-
-        # Loss and metrics
-        self.loss_fn = nn.MSELoss()
-        self.train_mae = MeanAbsoluteError()
-        self.val_mae = MeanAbsoluteError()
-        self.val_mse = MeanSquaredError()
+    Both the regression and classification BCS modules reuse the exact same
+    breed-classifier ViT as a frozen feature extractor; this mixin keeps that
+    logic in one place. Consuming classes are ``LightningModule`` subclasses and
+    must have already set ``self.backbone`` (via :meth:`_build_backbone`).
+    """
 
     def _build_backbone(self, ckpt_path, model_name, num_classes):
         """Load classification checkpoint and extract ViT backbone."""
@@ -119,12 +63,78 @@ class LitBCSRegression(LightningModule):
             cls_embedding = outputs.hidden_states[-1][:, 0]  # (B, 768)
         return cls_embedding.to(x.device)
 
+
+class BCSRegressionHead(nn.Module):
+    """Small MLP: embedding_dim → hidden → 1 (BCS score)."""
+
+    def __init__(
+        self,
+        embedding_dim: int = 768,
+        hidden_dim: int = 128,
+        dropout: float = 0.3,
+        target_mean: float = 5.0,
+    ):
+        super().__init__()
+        self.head = nn.Sequential(
+            nn.LayerNorm(embedding_dim),
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+        )
+        # Warm-start the output layer: bias = target mean, weights = 0.
+        # The head therefore starts by predicting the dataset mean and only
+        # needs to learn residuals (avoids the LR collapsing before the bias
+        # has time to drift up from 0 to the BCS range).
+        final_linear = self.head[-1]
+        nn.init.zeros_(final_linear.weight)
+        nn.init.constant_(final_linear.bias, float(target_mean))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(x).squeeze(-1)  # (B,)
+
+
+class LitBCSRegression(_BCSBackboneMixin, LightningModule):
+    """Frozen ViT backbone + trainable regression head for BCS prediction."""
+
+    def __init__(
+        self,
+        backbone_ckpt: Optional[str] = None,
+        model_name: str = "vit",
+        num_classes: int = 132,
+        embedding_dim: int = 768,
+        hidden_dim: int = 128,
+        dropout: float = 0.3,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-4,
+        target_mean: float = 5.0,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+
+        # Build and freeze ViT backbone
+        self.backbone = self._build_backbone(backbone_ckpt, model_name, num_classes)
+        for p in self.backbone.parameters():
+            p.requires_grad = False
+        self.backbone.eval()
+
+        # Trainable regression head
+        self.head = BCSRegressionHead(
+            embedding_dim, hidden_dim, dropout, target_mean=target_mean
+        )
+
+        # Loss and metrics
+        self.loss_fn = nn.MSELoss()
+        self.train_mae = MeanAbsoluteError()
+        self.val_mae = MeanAbsoluteError()
+        self.val_mse = MeanSquaredError()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.extract_features(x)
         return self.head(features.float())
 
     def training_step(self, batch, batch_idx):
-        x, y = batch  # y: float BCS scores
+        x, _, y = batch  # (image, covariates [ignored], float BCS scores)
         y_hat = self(x)
         loss = self.loss_fn(y_hat, y)
         self.train_mae(y_hat, y)
@@ -133,7 +143,7 @@ class LitBCSRegression(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
+        x, _, y = batch
         y_hat = self(x)
         loss = self.loss_fn(y_hat, y)
         self.val_mae(y_hat, y)
@@ -144,7 +154,7 @@ class LitBCSRegression(LightningModule):
         return loss
 
     def predict_step(self, batch, batch_idx):
-        x, _ = batch
+        x, _, _ = batch
         return self(x)
 
     def configure_optimizers(self):
