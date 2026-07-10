@@ -147,14 +147,30 @@ Pilier final qui consomme les précédents : la silhouette segmentée (fond remi
 
 ## Table of Contents
 
-1. [Project Structure](#project-structure)
-2. [Setup & Installation](#setup--installation)
-3. [Training](#training)
-4. [Inference](#inference)
-5. [Application web](#application-web)
-6. [Evaluation Notebooks](#evaluation-notebooks)
-7. [Architecture & Module Reference](#architecture--module-reference)
-8. [Configuration Reference](#configuration-reference)
+1. [Documentation](#documentation)
+2. [Project Structure](#project-structure)
+3. [Setup & Installation](#setup--installation)
+4. [Training](#training)
+5. [Inference](#inference)
+6. [Application web](#application-web)
+7. [Evaluation Notebooks](#evaluation-notebooks)
+8. [Architecture & Module Reference](#architecture--module-reference)
+9. [Configuration Reference](#configuration-reference)
+
+## Documentation
+
+La documentation technique de référence vit dans [`docs/`](docs/). Elle sert de
+source de vérité pour comprendre le code avant de le modifier ; les agents et
+contributeurs doivent **consulter le fichier pertinent avant chaque action**
+(protocole décrit dans [`AGENTS.md`](AGENTS.md)).
+
+| Fichier | Contenu |
+|---|---|
+| [docs/README.md](docs/README.md) | **Hub** : protocole « lire avant d'agir », routage, conventions transverses (git, checkpoints, configs, pièges) |
+| [docs/architecture.md](docs/architecture.md) | Vue d'ensemble, cascade espèce→race→silhouette→BCS, carte du package, package `inference/`, CLI |
+| [docs/training.md](docs/training.md) | Entraînement (`train.py`/Hydra), LightningModules, backbones, datamodules, configs, script BCS |
+| [docs/webapp.md](docs/webapp.md) | App FastAPI (`app.py`), base SQLite (`db.py`), frontend, pré-chargement |
+| [docs/BCS_CASCADE_PROGRESS.md](docs/BCS_CASCADE_PROGRESS.md) | Tracker inter-session du chantier cascade BCS |
 
 ## Project Structure
 
